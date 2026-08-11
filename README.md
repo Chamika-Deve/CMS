@@ -1,67 +1,46 @@
-Computer Shop Management System (CSMS)
-Welcome to the Computer Shop Management System (CSMS)! This is a comprehensive, web-based PHP application designed to streamline the day-to-day operations of a computer retail and repair shop.
+<div align="center">
+  
+  # 🖥️ CSMS 
+  ### Computer Shop Management System
+  
+  <p align="center">
+    <img src="https://img.shields.io/badge/PHP-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP" />
+    <img src="https://img.shields.io/badge/MySQL-00000F?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL" />
+    <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript" />
+    <img src="https://img.shields.io/badge/Status-Active-00FF00?style=for-the-badge" alt="Status" />
+  </p>
+  
+  <p align="center">
+    A comprehensive, high-performance web application designed to streamline the day-to-day operations of computer retail and repair shops.
+  </p>
+</div>
 
-🚀 About the Project
-This system provides an all-in-one dashboard to manage everything from point-of-sale (POS) transactions and inventory to custom PC builds and hardware repairs. It is designed to help shop owners keep track of their customers, suppliers, warranties, and sales through a centralized platform.
+---
 
-✨ Key Features
-Based on the project modules, this system includes the following core functionalities:
+> **System Status:** `Online` | **Access Level:** `Admin/Staff` 
 
-Point of Sale (POS): Process sales efficiently with a dedicated POS interface (pos.php).
+## 🚀 About the Project
 
-Billing & Quotes: Automatically generate and print professional bills (print_bill.php) and quotes (print_quote.php).
+This system provides a centralized dashboard to manage everything from point-of-sale (POS) transactions and inventory to custom PC builds and hardware repairs. It is optimized to help shop owners maintain accurate records of customers, suppliers, warranties, and daily sales.
 
-Custom PC Builder: A specialized module to help customers mix and match compatible parts to build custom computers (build_pc.php).
+## ✨ Core Features
 
-Robust Inventory Management: Add, edit, and track products (products.php, product_add.php, product_edit.php), including individual serial number tracking for electronics (product_serials.php).
+- **🛒 Point of Sale (POS):** Process sales efficiently with a dedicated, responsive POS interface (`pos.php`).
+- **🧾 Billing & Quotes:** Automatically generate and print professional bills (`print_bill.php`) and custom quotes (`print_quote.php`).
+- **⚙️ Custom PC Builder:** A specialized module allowing customers to mix and match compatible parts to build custom rigs (`build_pc.php`).
+- **📦 Advanced Inventory:** Add, edit, and track products, including individual serial number tracking for hardware (`product_serials.php`).
+- **👥 CRM (Customers & Suppliers):** Keep structured, easily searchable records of both your clientele and your vendors.
+- **🔧 Repairs & Warranties:** Track ongoing customer hardware repairs and manage strict product warranty periods.
+- **📊 Analytics & Reports:** Manage shop purchases and generate business analytics/reports for data-driven decisions.
+- **🔐 System Admin:** Full user access control and customizable system settings (including dynamic logo uploads).
 
-Customer & Supplier CRM: Keep organized records of both your clientele and your vendors (customers.php, suppliers.php).
+## 🗂️ Project Structure
 
-Repairs & Warranties: Track ongoing customer hardware repairs (repairs.php) and manage product warranty periods (warranty.php).
-
-Purchasing & Reports: Manage shop purchases (purchases.php) and generate business analytics/reports (reports.php).
-
-System Administration: Full user access control (users.php) and customizable system settings, including logo uploads (settings.php, setup_settings.php).
-
-🗂️ Project Structure
-The repository is organized into the following main directories:
-
-/detabase/: Contains the database initialization script (csms_db.sql).
-
-/includes/: Contains core reusable components like database connection (db.php), header.php, and footer.php.
-
-/pages/: The core application modules (Dashboard, POS, Products, Repairs, etc.).
-
-/uploads/logo/: Stores dynamically uploaded system assets, such as company logos.
-
-🛠️ Installation & Setup
-Clone the Repository:
-
-Bash
-git clone https://github.com/yourusername/CMS-main.git
-Environment Setup:
-
-Ensure you have a local server environment running PHP and MySQL (e.g., XAMPP, WAMP, or LAMP).
-
-Place the project folder in your server's root directory (e.g., htdocs or www).
-
-Database Configuration:
-
-Create a new MySQL database (e.g., csms_db).
-
-Import the provided SQL dump located at /detabase/csms_db.sql into your new database.
-
-Update the database credentials in /includes/db.php to match your local database settings.
-
-System Setup:
-
-Navigate to http://localhost/CMS-main/setup_settings.php to configure initial shop settings.
-
-Log in via index.php.
-
-💻 Technologies Used
-Backend: PHP
-
-Database: MySQL
-
-Frontend: HTML/CSS/JavaScript (Standard web technologies)
+```text
+CMS-main/
+├── detabase/         # Contains csms_db.sql for database initialization
+├── includes/         # Core reusable components (db.php, header, footer)
+├── pages/            # Main application modules (Dashboard, POS, Products, etc.)
+├── uploads/logo/     # Dynamically uploaded system assets (e.g., brand logos)
+├── index.php         # Secure login & entry point
+└── setup_settings.php# Initial shop configuration interface
