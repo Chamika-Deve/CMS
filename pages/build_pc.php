@@ -78,7 +78,7 @@ require_once '../includes/header.php';
                     </div>
                     <div class="flex justify-between font-bold text-2xl text-white pt-3 border-t border-slate-700">
                         <span>Total Price</span>
-                        <span id="summaryTotal">$0.00</span>
+                        <span id="summaryTotal"><?php echo htmlspecialchars($currency_symbol); ?> 0.00</span>
                     </div>
                 </div>
                 <button onclick="submitQuote()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg transition-colors flex items-center justify-center">
@@ -150,7 +150,7 @@ require_once '../includes/header.php';
                         </div>
                     </div>
                     <div class="flex items-center gap-4 shrink-0">
-                        <div class="font-bold text-slate-800 hidden" id="price-${slot.id}">$0.00</div>
+                        <div class="font-bold text-slate-800 hidden" id="price-${slot.id}"><?php echo htmlspecialchars($currency_symbol); ?> 0.00</div>
                         <button onclick="openSearchModal('${slot.id}', '${slot.name}')" class="bg-slate-100 text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded text-xs font-bold transition-colors">
                             Select
                         </button>
@@ -249,7 +249,7 @@ require_once '../includes/header.php';
         codeEl.classList.remove('hidden');
         
         const priceEl = document.getElementById(`price-${activeSlotId}`);
-        priceEl.textContent = '$' + currentBuild[activeSlotId].price.toFixed(2);
+        priceEl.textContent = (window.CURRENCY_SYMBOL || "Rs.") + " " + currentBuild[activeSlotId].price.toFixed(2);
         priceEl.classList.remove('hidden');
         
         const btn = slotEl.querySelector('button');
@@ -300,7 +300,7 @@ require_once '../includes/header.php';
         }
         
         document.getElementById('summaryCount').textContent = count;
-        document.getElementById('summaryTotal').textContent = '$' + total.toFixed(2);
+        document.getElementById('summaryTotal').textContent = (window.CURRENCY_SYMBOL || "Rs.") + " " + total.toFixed(2);
     }
 
     function submitQuote() {

@@ -4,7 +4,7 @@ require_once 'includes/db.php';
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'] ?? '';
+    $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     
     if ($pdo) {
@@ -14,53 +14,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Use password_verify since seed data uses bcrypt
         if ($user && password_verify($password, $user['password'])) {
-            if ($user['status'] == 1) {
-                $_SESSION['user'] = [
-                    'id' => $user['id'],
-                    'name' => $user['name'],
-                    'email' => $user['email'],
-                    'role' => $user['role']
-                ];
-                header("Location: pages/dashboard.php");
-                exit;
+            if ($user['status'] != 1) {
+                $error = "Your account is disabled. Contact system administrator.";
             } else {
-                $error = "Your account is disabled.";
+                $is_superadmin = ($user['role'] === 'SuperAdmin');
+
+                // Check System Lockdowns for Non-SuperAdmins
+                if (!$is_superadmin) {
+                    $is_maint = false;
+                    $maint_msg = "System is in Maintenance Mode. Non-admin staff cannot sign in right now.";
+                    $is_shop_disabled = false;
+                    $shop_dis_msg = "This shop account has been deactivated or suspended. Please contact technical engineering support.";
+
+                    try {
+                        $stmt_lock = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('maintenance_mode', 'maintenance_message', 'shop_disabled', 'shop_disabled_message')");
+                        while ($r = $stmt_lock->fetch(PDO::FETCH_ASSOC)) {
+                            if ($r['setting_key'] === 'maintenance_mode' && ($r['setting_value'] === '1' || $r['setting_value'] === 'true')) $is_maint = true;
+                            if ($r['setting_key'] === 'maintenance_message' && !empty($r['setting_value'])) $maint_msg = $r['setting_value'];
+                            if ($r['setting_key'] === 'shop_disabled' && ($r['setting_value'] === '1' || $r['setting_value'] === 'true')) $is_shop_disabled = true;
+                            if ($r['setting_key'] === 'shop_disabled_message' && !empty($r['setting_value'])) $shop_dis_msg = $r['setting_value'];
+                        }
+                    } catch (Exception $e) {}
+
+                    if ($is_shop_disabled) {
+                        $error = "🛑 " . $shop_dis_msg;
+                    } elseif ($is_maint) {
+                        $error = "🔧 " . $maint_msg;
+                    }
+                }
+
+                if (empty($error)) {
+                    $_SESSION['user'] = [
+                        'id' => $user['id'],
+                        'name' => $user['name'],
+                        'email' => $user['email'],
+                        'role' => $user['role']
+                    ];
+                    header("Location: pages/dashboard.php");
+                    exit;
+                }
             }
         } else {
             $error = "Invalid email or password.";
         }
     } else {
-        $error = "Database connection failed. Cannot authenticate.";
+        // Standalone offline demo mode fallback
+        $demo_roles = [
+            'superadmin@example.com' => ['id' => 99, 'name' => 'Software Engineer (SuperAdmin)', 'role' => 'SuperAdmin'],
+            'admin@example.com' => ['id' => 1, 'name' => 'Admin User', 'role' => 'Admin'],
+            'manager@example.com' => ['id' => 2, 'name' => 'Manager User', 'role' => 'Manager'],
+            'cashier@example.com' => ['id' => 3, 'name' => 'Cashier User', 'role' => 'Cashier'],
+            'tech@example.com' => ['id' => 4, 'name' => 'Technician Alex', 'role' => 'Technician'],
+            'inventory@example.com' => ['id' => 5, 'name' => 'Inventory Dave', 'role' => 'Inventory'],
+            'accountant@example.com' => ['id' => 6, 'name' => 'Accountant Sarah', 'role' => 'Accountant'],
+        ];
+        if (isset($demo_roles[$email])) {
+            $_SESSION['user'] = [
+                'id' => $demo_roles[$email]['id'],
+                'name' => $demo_roles[$email]['name'],
+                'email' => $email,
+                'role' => $demo_roles[$email]['role']
+            ];
+            header("Location: pages/dashboard.php");
+            exit;
+        } else {
+            $error = "Invalid demo credentials. Select a role below.";
+        }
     }
 }
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSMS - Login</title>
+    <title>TechShop - Computer Shop & Repair Management POS</title>
     <!-- Tailwind CSS Play CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
+                        sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
                     },
                     colors: {
-                        brand: {
-                            50: '#f0f9ff',
-                            100: '#e0f2fe',
-                            500: '#0ea5e9',
-                            600: '#0284c7',
-                            900: '#0c4a6e',
+                        emerald: {
+                            500: '#10B981',
+                            600: '#059669',
+                            700: '#047857',
                         }
                     }
                 }
@@ -69,113 +114,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
     <style>
         body {
-            background: linear-gradient(135deg, #0c4a6e 0%, #0284c7 100%);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #064E3B 100%);
             min-height: 100vh;
         }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .glass-card {
+            background: rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        }
-        .animate-float {
-            animation: float 6s ease-in-out infinite;
-        }
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-20px); }
-            100% { transform: translateY(0px); }
-        }
-        .input-glow:focus {
-            box-shadow: 0 0 15px rgba(14, 165, 233, 0.5);
         }
     </style>
 </head>
-<body class="flex items-center justify-center p-4 overflow-hidden relative">
+<body class="flex items-center justify-center p-4 min-h-screen text-slate-100 antialiased">
     
-    <!-- Background Decorators -->
-    <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-brand-500 rounded-full mix-blend-multiply filter blur-[128px] opacity-50 animate-float" style="animation-delay: 0s;"></div>
-    <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-[128px] opacity-50 animate-float" style="animation-delay: 2s;"></div>
-
-    <div class="w-full max-w-md z-10 relative">
-        <div class="text-center mb-8 animate-float" style="animation-delay: 1s;">
-            <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl glass-panel mb-4 text-white text-3xl">
-                <i class="fa-solid fa-microchip"></i>
+    <div class="w-full max-w-lg z-10 py-8">
+        
+        <!-- Brand Header -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-emerald-500 text-white text-2xl font-black shadow-lg shadow-emerald-500/30 mb-3">
+                T
             </div>
-            <h1 class="text-4xl font-bold text-white tracking-tight">TechShop</h1>
-            <p class="text-brand-100 mt-2 font-medium">Management System v2.0</p>
+            <h1 class="text-3xl font-extrabold text-white tracking-tight">TechShop</h1>
+            <p class="text-xs sm:text-sm text-slate-400 mt-1">Computer Shop POS, Inventory & Repair Management</p>
         </div>
 
-        <div class="glass-panel rounded-3xl p-8 sm:p-10 transform transition-all duration-300 hover:scale-[1.02]">
-            <h2 class="text-2xl font-semibold text-white mb-6 text-center">Welcome Back</h2>
+        <!-- Login Card -->
+        <div class="glass-card rounded-3xl p-7 sm:p-9">
+            <h2 class="text-xl font-bold text-white mb-6 text-center">Staff Sign In</h2>
             
             <?php if ($error): ?>
-                <div class="bg-red-500/20 border border-red-500/50 text-red-100 px-4 py-3 rounded-xl mb-6 text-sm flex items-center">
-                    <i class="fa-solid fa-circle-exclamation mr-2"></i>
-                    <?php echo htmlspecialchars($error); ?>
+                <div class="bg-red-500/20 border border-red-500/40 text-red-200 px-4 py-3 rounded-2xl mb-6 text-xs sm:text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span><?php echo htmlspecialchars($error); ?></span>
                 </div>
             <?php endif; ?>
 
-            <form method="POST" action="index.php" class="space-y-5">
+            <form method="POST" action="index.php" class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-brand-50 mb-1" for="email">Email Address</label>
+                    <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5" for="email">Staff Email / Username</label>
                     <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-100">
-                            <i class="fa-regular fa-envelope"></i>
-                        </div>
+                        <i class="fa-regular fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                         <input type="email" id="email" name="email" required 
-                               class="block w-full pl-10 pr-3 py-3 border border-white/20 rounded-xl leading-5 bg-white/10 text-white placeholder-brand-100/50 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 sm:text-sm transition-colors input-glow" 
-                               placeholder="admin@example.com" value="admin@example.com">
+                               class="w-full pl-11 pr-4 py-3 bg-white/10 border border-white/10 rounded-2xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all" 
+                               placeholder="user@example.com" value="admin@example.com">
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-brand-50 mb-1" for="password">Password</label>
+                    <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5" for="password">Password</label>
                     <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-100">
-                            <i class="fa-solid fa-lock"></i>
-                        </div>
+                        <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                         <input type="password" id="password" name="password" required 
-                               class="block w-full pl-10 pr-3 py-3 border border-white/20 rounded-xl leading-5 bg-white/10 text-white placeholder-brand-100/50 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 sm:text-sm transition-colors input-glow" 
+                               class="w-full pl-11 pr-4 py-3 bg-white/10 border border-white/10 rounded-2xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all" 
                                placeholder="••••••••" value="password">
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between mt-4">
-                    <div class="flex items-center">
-                        <input id="remember-me" name="remember-me" type="checkbox" class="h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded bg-white/10 border-white/20">
-                        <label for="remember-me" class="ml-2 block text-sm text-brand-50">
-                            Remember me
-                        </label>
-                    </div>
-                    <div class="text-sm">
-                        <a href="#" class="font-medium text-brand-100 hover:text-white transition-colors">Forgot password?</a>
-                    </div>
-                </div>
-
-                <button type="submit" class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-semibold text-brand-900 bg-white hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 transition-all duration-300 hover:shadow-xl mt-6">
-                    Sign in to System
-                    <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                <button type="submit" class="w-full py-3.5 px-4 rounded-2xl font-bold text-sm text-slate-950 bg-emerald-400 hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all duration-200 shadow-lg shadow-emerald-500/25 mt-4 flex items-center justify-center gap-2">
+                    <span>Sign In to System</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
                 </button>
             </form>
 
-            <div class="mt-8 pt-6 border-t border-white/20">
-                <p class="text-sm text-brand-100 text-center mb-4">Demo Accounts</p>
-                <div class="grid grid-cols-2 gap-2 text-xs">
-                    <button type="button" onclick="document.getElementById('email').value='admin@example.com'; document.getElementById('password').value='password';" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-2 text-white transition-colors text-center">
-                        <i class="fa-solid fa-user-shield block mb-1"></i> Admin
+            <!-- 1-Click Role Logins (6 Store Roles) -->
+            <div class="mt-8 pt-6 border-t border-white/10">
+                <p class="text-xs font-bold text-slate-400 text-center uppercase tracking-wider mb-3">1-Click Store Role Switcher</p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                    <button type="button" onclick="setRole('admin@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Admin</span>
+                        <span class="text-[10px] text-slate-400 block">Owner / Control</span>
                     </button>
-                    <button type="button" onclick="document.getElementById('email').value='cashier@example.com'; document.getElementById('password').value='password';" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg p-2 text-white transition-colors text-center">
-                        <i class="fa-solid fa-cash-register block mb-1"></i> Cashier
+                    <button type="button" onclick="setRole('manager@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Manager</span>
+                        <span class="text-[10px] text-slate-400 block">Store Operations</span>
+                    </button>
+                    <button type="button" onclick="setRole('cashier@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Cashier</span>
+                        <span class="text-[10px] text-slate-400 block">Fast POS & Intake</span>
+                    </button>
+                    <button type="button" onclick="setRole('tech@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Technician</span>
+                        <span class="text-[10px] text-slate-400 block">Repair Workbench</span>
+                    </button>
+                    <button type="button" onclick="setRole('inventory@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Inventory</span>
+                        <span class="text-[10px] text-slate-400 block">Stock & PO/GRN</span>
+                    </button>
+                    <button type="button" onclick="setRole('accountant@example.com')" class="p-2.5 bg-white/5 hover:bg-white/15 border border-white/10 rounded-xl text-left transition-all group">
+                        <span class="block font-bold text-white group-hover:text-emerald-400">Accountant</span>
+                        <span class="text-[10px] text-slate-400 block">Drawers & P&L</span>
                     </button>
                 </div>
             </div>
+
+            <!-- Customer Repair Tracker Link -->
+            <div class="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-xs">
+                <a href="track.php" class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <span>Repair Status Tracker &rarr;</span>
+                </a>
+                <button type="button" onclick="setRole('superadmin@example.com')" title="Developer Root Access" class="text-slate-500 hover:text-purple-400 text-[11px] font-mono transition-colors flex items-center gap-1">
+                    <i class="fa-solid fa-terminal"></i>
+                    <span>Engineer Login</span>
+                </button>
+            </div>
+
         </div>
         
-        <p class="text-center text-brand-100/60 text-sm mt-8">
-            &copy; 2026 TechShop Systems. All rights reserved.
+        <p class="text-center text-slate-400 text-xs mt-6">
+            &copy; 2026 TechShop System. Enterprise Computer Shop & POS Platform.
         </p>
     </div>
+
+    <script>
+        function setRole(email) {
+            document.getElementById('email').value = email;
+            document.getElementById('password').value = 'password';
+        }
+    </script>
 </body>
 </html>

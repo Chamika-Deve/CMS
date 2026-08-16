@@ -2,7 +2,7 @@
 $host = '127.0.0.1';
 $db   = 'csms_db';
 $user = 'root';
-$pass = ''; // Default XAMPP/Laragon password
+$pass = '6969'; // Default XAMPP/Laragon password
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
