@@ -6,7 +6,7 @@ enforce_page_access('products.php');
 $user = $_SESSION['user'];
 $role = $user['role'] ?? 'Cashier';
 $user_id = $user['id'] ?? 1;
-$can_manage_inventory = in_array($role, ['Admin', 'Manager', 'Inventory'], true);
+$can_manage_inventory = can_write_page('products.php');
 
 // Product browsing is available to several roles, but stock/catalog changes
 // are restricted to staff responsible for inventory.

@@ -8,8 +8,8 @@ $msg_type = 'success';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
-    if ($action === 'delete_supplier' && !in_array($role, ['Admin', 'Manager'], true)) {
-        abort_request(403, 'Only a manager or administrator may delete suppliers.');
+    if (!can_write_page('suppliers.php')) {
+        abort_request(403, 'You do not have permission to modify suppliers.');
     }
 
     if ($action === 'add_supplier' && $pdo) {
@@ -271,7 +271,7 @@ if ($pdo) {
                                 <button onclick="openSupplierModal('edit', <?php echo htmlspecialchars(json_encode($s)); ?>)" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                 </button>
-                                <?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
+                                <?php if (can_write_page('suppliers.php')): ?>
                                 <form method="POST" action="suppliers.php" onsubmit="return confirm('Delete supplier <?php echo addslashes($supp_name); ?>?');" class="inline">
                                     <input type="hidden" name="action" value="delete_supplier">
                                     <input type="hidden" name="id" value="<?php echo $s['id'] ?? ''; ?>">

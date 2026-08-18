@@ -149,7 +149,7 @@ $LANG_DICTIONARY = [
         'nav_audit' => 'ක්‍රියාකාරකම් සටහන් (Audit Trail)',
         'nav_settings_group' => 'පද්ධති සැකසුම්',
         'nav_shop_settings' => 'ව්‍යාපාරික සැකසුම් (Shop Settings)',
-        'nav_system_settings' => 'ඉංජිනේරු පාලන පුවරුව (SuperAdmin)',
+        'nav_system_settings' => 'පද්ධති පාලන පුවරුව',
         'nav_sign_out' => 'පද්ධතියෙන් ඉවත් වන්න (Sign Out)',
 
         // Header Actions
@@ -245,7 +245,7 @@ $LANG_DICTIONARY = [
         'nav_audit' => 'செயல்பாட்டு பதிவு (Audit Trail)',
         'nav_settings_group' => 'அமைப்புகள்',
         'nav_shop_settings' => 'கடை அமைப்புகள் (Shop Settings)',
-        'nav_system_settings' => 'கணினி அமைப்புகள் (SuperAdmin)',
+        'nav_system_settings' => 'கணினி அமைப்புகள்',
         'nav_sign_out' => 'வெளியேறு (Sign Out)',
 
         // Header Actions

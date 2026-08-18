@@ -459,7 +459,7 @@
                             msg.className = 'p-4 bg-purple-950/30 rounded-2xl border border-purple-500/20 text-xs text-slate-300 leading-relaxed text-left';
                         } else {
                             title.textContent = 'Shop Access Suspended';
-                            sub.textContent = 'Deactivated by SuperAdmin Engineer';
+                            sub.textContent = 'System Access Suspended';
                             sub.className = 'text-xs text-red-400 font-bold uppercase tracking-wider mt-1';
                             iconBox.className = 'w-16 h-16 rounded-3xl bg-red-500/20 text-red-400 flex items-center justify-center text-3xl mx-auto border border-red-500/30';
                             icon.className = 'fa-solid fa-ban';

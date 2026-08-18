@@ -2,6 +2,73 @@
 require_once '../includes/db.php';
 require_once '../includes/header.php';
 
+// ── role_permissions table + seed ────────────────────────────────────────────
+$matrix_modules = [
+    'System Infrastructure & APIs'             => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
+    'Database Backups & Schema Migrations'     => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
+    'User Impersonation & Security Override'   => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
+    'Dashboard / Business KPIs'                => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'-','Inventory'=>'V','Accountant'=>'V'],
+    'POS / Sales & Barcode Scanning'           => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'V'],
+    'Products / Inventory & Serials'           => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'V','Inventory'=>'F','Accountant'=>'V'],
+    'Repair & Service Jobs Workbench'          => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'E','Inventory'=>'-','Accountant'=>'V'],
+    'Suppliers & Purchasing (POs/GRN)'         => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'E','Cashier'=>'-','Technician'=>'-','Inventory'=>'F','Accountant'=>'V'],
+    'Accounting, Expenses & Cash Drawer'       => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'V','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'F'],
+];
+$matrix_roles = ['SuperAdmin','Admin','Manager','Cashier','Technician','Inventory','Accountant'];
+
+if ($pdo) {
+    // Create table
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `role_permissions` (
+                `id`          int unsigned NOT NULL AUTO_INCREMENT,
+                `module`      varchar(120) NOT NULL,
+                `role`        varchar(40)  NOT NULL,
+                `access`      varchar(10)  NOT NULL DEFAULT '-',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uq_module_role` (`module`,`role`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+    } catch (Exception $e) {}
+
+    // Seed defaults if empty
+    try {
+        $cnt = (int)$pdo->query("SELECT COUNT(*) FROM role_permissions")->fetchColumn();
+        if ($cnt === 0) {
+            $ins = $pdo->prepare("INSERT IGNORE INTO role_permissions (module, role, access) VALUES (?,?,?)");
+            foreach ($matrix_modules as $mod => $roles) {
+                foreach ($roles as $r => $acc) {
+                    $ins->execute([$mod, $r, $acc]);
+                }
+            }
+        }
+    } catch (Exception $e) {}
+
+    // Load current values
+    try {
+        $perm_rows = $pdo->query("SELECT module, role, access FROM role_permissions")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($perm_rows as $pr) {
+            $matrix_modules[$pr['module']][$pr['role']] = $pr['access'];
+        }
+    } catch (Exception $e) {}
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── users table migration ─────────────────────────────────────────────────────
+if ($pdo) {
+    $addUserCol = function($col, $def) use ($pdo) {
+        try {
+            $chk = $pdo->query("SHOW COLUMNS FROM `users` LIKE '$col'");
+            if (!$chk->fetch()) {
+                $pdo->exec("ALTER TABLE `users` ADD COLUMN `$col` $def");
+            }
+        } catch (Exception $e) {}
+    };
+    $addUserCol('phone',     "varchar(30) DEFAULT NULL");
+    $addUserCol('branch_id', "int unsigned NOT NULL DEFAULT 1");
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 $msg = '';
 $msg_type = 'success';
 
@@ -19,6 +86,32 @@ $can_manage_role = static function (string $target_role) use ($assignable_roles)
 // Handle User Management Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
+
+    // Save Permission Matrix (SuperAdmin only)
+    if ($action === 'save_matrix' && $role === 'SuperAdmin' && $pdo) {
+        try {
+            $posted = $_POST['matrix'] ?? [];
+            $allowed_access = ['F', 'E', 'V', 'A', '-'];
+            $ups = $pdo->prepare("INSERT INTO role_permissions (module, role, access) VALUES (?,?,?) ON DUPLICATE KEY UPDATE access = VALUES(access)");
+            foreach ($posted as $mod => $roles_arr) {
+                foreach ($roles_arr as $r => $acc) {
+                    $acc = in_array($acc, $allowed_access, true) ? $acc : '-';
+                    $ups->execute([urldecode($mod), $r, $acc]);
+                }
+            }
+            $msg = 'Permission matrix saved successfully!';
+        } catch (Exception $e) {
+            $msg = 'Error saving matrix: ' . safe_error_message($e);
+            $msg_type = 'error';
+        }
+        // Reload updated values
+        try {
+            $perm_rows = $pdo->query("SELECT module, role, access FROM role_permissions")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($perm_rows as $pr) {
+                $matrix_modules[$pr['module']][$pr['role']] = $pr['access'];
+            }
+        } catch (Exception $e) {}
+    }
 
     if ($action === 'add_user' && $pdo) {
         try {
@@ -126,8 +219,12 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-// Active Tab
+// Active Tab — non-admin roles can only view the permission matrix
 $tab = $_GET['tab'] ?? 'users';
+$can_manage_users = in_array($role, ['Admin', 'Manager', 'SuperAdmin'], true);
+if (!$can_manage_users) {
+    $tab = 'matrix'; // force read-only matrix view for other roles
+}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -143,6 +240,7 @@ $tab = $_GET['tab'] ?? 'users';
         </div>
         
         <div class="flex items-center gap-3">
+            <?php if ($can_manage_users): ?>
             <a href="users.php?tab=matrix" class="px-4 py-2.5 rounded-2xl border <?php echo $tab === 'matrix' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'border-slate-200 text-slate-700 hover:bg-slate-50'; ?> text-xs sm:text-sm font-bold transition-all shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-table-cells text-emerald-600"></i>
                 <span>Permission Matrix</span>
@@ -151,6 +249,11 @@ $tab = $_GET['tab'] ?? 'users';
                 <i class="fa-solid fa-user-plus text-xs"></i>
                 <span>Add New User</span>
             </button>
+            <?php else: ?>
+            <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold">
+                <i class="fa-solid fa-eye"></i> View Only
+            </span>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -165,137 +268,140 @@ $tab = $_GET['tab'] ?? 'users';
 
     <?php if ($tab === 'matrix'): ?>
     <!-- Permission Matrix Table Card -->
+    <?php
+    // Helper: render access badge (readonly)
+    function access_badge(string $acc): string {
+        $map = [
+            'F' => ['label'=>'F','cls'=>'bg-emerald-100 text-emerald-700 border-emerald-300 font-extrabold'],
+            'E' => ['label'=>'E','cls'=>'bg-blue-100 text-blue-700 border-blue-300 font-bold'],
+            'V' => ['label'=>'V','cls'=>'bg-slate-100 text-slate-600 border-slate-300 font-semibold'],
+            'A' => ['label'=>'A','cls'=>'bg-amber-100 text-amber-700 border-amber-300 font-bold'],
+            '-' => ['label'=>'—','cls'=>'bg-transparent text-slate-300 border-transparent font-normal'],
+        ];
+        $d = $map[$acc] ?? $map['-'];
+        return '<span class="inline-block border text-[11px] px-2 py-0.5 rounded-lg '.$d['cls'].'">'.$d['label'].'</span>';
+    }
+    $superadmin_only_mods = [
+        'System Infrastructure & APIs',
+        'Database Backups & Schema Migrations',
+        'User Impersonation & Security Override',
+    ];
+    $matrix_roles = ($role === 'SuperAdmin')
+        ? ['SuperAdmin', 'Admin', 'Manager', 'Cashier', 'Technician', 'Inventory', 'Accountant']
+        : ['Admin', 'Manager', 'Cashier', 'Technician', 'Inventory', 'Accountant'];
+    ?>
+    <form method="POST" action="users.php?tab=matrix" id="matrixForm">
+    <input type="hidden" name="action" value="save_matrix">
     <div class="bg-white rounded-3xl shadow-card border border-slate-100/90 p-6 sm:p-7 overflow-hidden">
-        <div class="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-slate-100">
             <div>
                 <h2 class="text-lg font-bold text-slate-900">Role &times; Module Access Matrix</h2>
                 <p class="text-xs text-slate-400 font-medium mt-0.5">Enforced server-side across all controllers and API routes</p>
             </div>
-            <div class="flex items-center gap-3 text-xs">
-                <span class="inline-flex items-center gap-1 font-bold text-emerald-600"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> F = Full</span>
-                <span class="inline-flex items-center gap-1 font-bold text-blue-600"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> E = Edit/Create</span>
-                <span class="inline-flex items-center gap-1 font-bold text-slate-600"><span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> V = View Only</span>
-                <span class="inline-flex items-center gap-1 font-bold text-amber-600"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> A = Approval Required</span>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="inline-flex items-center gap-1.5 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>F = Full</span>
+                <span class="inline-flex items-center gap-1.5 font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl"><span class="w-2 h-2 rounded-full bg-blue-500"></span>E = Edit</span>
+                <span class="inline-flex items-center gap-1.5 font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl"><span class="w-2 h-2 rounded-full bg-slate-400"></span>V = View</span>
+                <span class="inline-flex items-center gap-1.5 font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl"><span class="w-2 h-2 rounded-full bg-amber-500"></span>A = Approval</span>
+                <span class="inline-flex items-center gap-1.5 text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl">— = None</span>
+                <?php if ($role === 'SuperAdmin'): ?>
+                <button type="submit" form="matrixForm" class="ml-1 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-floppy-disk"></i> Save Changes
+                </button>
+                <?php endif; ?>
             </div>
         </div>
 
         <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
-                    <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                        <th class="py-3 px-4">Module / Feature Action</th>
-                        <?php if ($role === 'SuperAdmin'): ?>
-                        <th class="py-3 px-3 text-center text-purple-700 font-extrabold bg-purple-50/70">SuperAdmin</th>
-                        <?php endif; ?>
-                        <th class="py-3 px-3 text-center">Owner / Admin</th>
-                        <th class="py-3 px-3 text-center">Manager</th>
-                        <th class="py-3 px-3 text-center">Cashier</th>
-                        <th class="py-3 px-3 text-center">Technician</th>
-                        <th class="py-3 px-3 text-center">Inventory</th>
-                        <th class="py-3 px-3 text-center">Accountant</th>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider">
+                        <th class="py-3 px-4 text-slate-600 min-w-[180px]">Module / Feature</th>
+                        <?php foreach ($matrix_roles as $r_col): ?>
+                        <th class="py-3 px-3 text-center <?php echo $r_col === 'SuperAdmin' ? 'text-purple-700 bg-purple-50/60' : 'text-slate-600'; ?> min-w-[90px]">
+                            <?php echo $r_col === 'Admin' ? 'Owner / Admin' : htmlspecialchars($r_col); ?>
+                        </th>
+                        <?php endforeach; ?>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 font-medium text-slate-800">
-                    <?php if ($role === 'SuperAdmin'): ?>
-                    <tr>
-                        <td class="py-3 px-4 font-bold">System Infrastructure & APIs</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F (Exclusive)</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
+                <tbody class="divide-y divide-slate-100">
+                    <?php
+                    $superadmin_only_mods = [
+                        'System Infrastructure & APIs',
+                        'Database Backups & Schema Migrations',
+                        'User Impersonation & Security Override',
+                    ];
+                    foreach ($matrix_modules as $mod_name => $mod_perms):
+                        $is_superonly = in_array($mod_name, $superadmin_only_mods, true);
+                        if ($role !== 'SuperAdmin' && $is_superonly) {
+                            continue; // Hide SuperAdmin-only rows completely from Admin and other staff
+                        }
+                        $mod_key = urlencode($mod_name);
+                    ?>
+                    <tr class="hover:bg-slate-50/50 transition-colors <?php echo $is_superonly ? 'bg-purple-50/20' : ''; ?>">
+                        <td class="py-3 px-4 font-semibold text-slate-800 text-[12px]">
+                            <?php if ($is_superonly): ?>
+                                <span class="inline-flex items-center gap-1.5 text-purple-800 font-bold">
+                                    <i class="fa-solid fa-lock text-purple-300 text-[10px]"></i>
+                                    <?php echo htmlspecialchars($mod_name); ?>
+                                </span>
+                            <?php else: ?>
+                                <?php echo htmlspecialchars($mod_name); ?>
+                            <?php endif; ?>
+                        </td>
+                        <?php foreach ($matrix_roles as $col_role):
+                            $acc = $mod_perms[$col_role] ?? '-';
+                            $is_purple_col = ($col_role === 'SuperAdmin');
+                            $is_locked = $is_purple_col || $is_superonly;
+                        ?>
+                        <td class="py-3 px-3 text-center <?php echo $is_purple_col ? 'bg-purple-50/30' : ''; ?>">
+                            <?php if ($role === 'SuperAdmin' && !$is_locked): ?>
+                                <select name="matrix[<?php echo htmlspecialchars($mod_key); ?>][<?php echo $col_role; ?>]"
+                                        onchange="markChanged(this)"
+                                        class="matrix-select w-full text-center text-[11px] font-bold border rounded-lg px-1 py-1 focus:outline-none transition-all cursor-pointer"
+                                        data-val="<?php echo htmlspecialchars($acc); ?>">
+                                    <option value="-" <?php echo $acc==='-'?'selected':''; ?>>— None</option>
+                                    <option value="V" <?php echo $acc==='V'?'selected':''; ?>>V  View</option>
+                                    <option value="E" <?php echo $acc==='E'?'selected':''; ?>>E  Edit</option>
+                                    <option value="A" <?php echo $acc==='A'?'selected':''; ?>>A  Approval</option>
+                                    <option value="F" <?php echo $acc==='F'?'selected':''; ?>>F  Full</option>
+                                </select>
+                            <?php else: ?>
+                                <?php
+                                $badge_map = [
+                                    'F' => '<span class="inline-block border text-[11px] px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-700 border-emerald-300 font-extrabold">F</span>',
+                                    'E' => '<span class="inline-block border text-[11px] px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 border-blue-300 font-bold">E</span>',
+                                    'V' => '<span class="inline-block border text-[11px] px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border-slate-300 font-semibold">V</span>',
+                                    'A' => '<span class="inline-block border text-[11px] px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 border-amber-300 font-bold">A</span>',
+                                    '-' => '<span class="inline-block text-[11px] px-2 py-0.5 text-slate-300">—</span>',
+                                ];
+                                echo $badge_map[$acc] ?? $badge_map['-'];
+                                ?>
+                                <?php if ($role === 'SuperAdmin'): ?>
+                                    <input type="hidden" name="matrix[<?php echo htmlspecialchars($mod_key); ?>][<?php echo $col_role; ?>]" value="<?php echo htmlspecialchars($acc); ?>">
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </td>
+                        <?php endforeach; ?>
                     </tr>
-                    <tr>
-                        <td class="py-3 px-4 font-bold">Database Backups & Schema Migrations</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F (Exclusive)</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4 font-bold">User Impersonation & Security Override</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F (Exclusive)</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                    </tr>
-                    <?php endif; ?>
-                    <tr>
-                        <td class="py-3 px-4 font-bold">Dashboard / Business KPIs</td>
-                        <?php if ($role === 'SuperAdmin'): ?>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <?php endif; ?>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V (own shift)</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V (stock)</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V (financial)</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4 font-bold">POS / Sales & Barcode Scanning</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-blue-600">E</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4">Products / Inventory & Serials</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4">Repair & Service Jobs Workbench</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                        <td class="py-3 px-3 text-center font-bold text-blue-600">E</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4">Suppliers & Purchasing (POs/GRN)</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-blue-600">E</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                    </tr>
-                    <tr>
-                        <td class="py-3 px-4">Accounting, Expenses & Cash Drawer</td>
-                        <td class="py-3 px-3 text-center font-bold text-purple-700 bg-purple-50/40">F</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                        <td class="py-3 px-3 text-center font-semibold text-slate-500">V</td>
-                        <td class="py-3 px-3 text-center font-bold text-blue-600">E</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center text-slate-300">-</td>
-                        <td class="py-3 px-3 text-center font-bold text-emerald-600">F</td>
-                    </tr>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+
+        <?php if ($role === 'SuperAdmin'): ?>
+        <div class="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <p class="text-xs text-slate-400"><i class="fa-solid fa-circle-info mr-1 text-purple-400"></i>SuperAdmin column &amp; system rows are permanently locked.</p>
+            <button type="submit" form="matrixForm" class="px-6 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-sm shadow-purple-500/25 flex items-center gap-2 shrink-0">
+                <i class="fa-solid fa-floppy-disk"></i> Save Permission Matrix
+            </button>
+        </div>
+        <?php endif; ?>
     </div>
+    </form>
     <?php endif; ?>
 
+    <?php if ($can_manage_users): ?>
     <!-- Users Table Card -->
     <div class="bg-white rounded-3xl shadow-card border border-slate-100/90 p-6 sm:p-7 overflow-hidden">
         
@@ -404,9 +510,11 @@ $tab = $_GET['tab'] ?? 'users';
         </div>
 
     </div>
+    <?php endif; // end can_manage_users ?>
 
 </div>
 
+<?php if ($can_manage_users): ?>
 <!-- User Modal (Add / Edit) -->
 <div id="userModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl shadow-floating border border-slate-100 w-full max-w-lg p-7 relative max-h-[90vh] overflow-y-auto">
@@ -527,5 +635,44 @@ function filterUsers() {
     });
 }
 </script>
+
+<style>
+.matrix-select {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #1e293b;
+    min-width: 72px;
+}
+.matrix-select[data-val="F"] { background:#f0fdf4; border-color:#86efac; color:#15803d; }
+.matrix-select[data-val="E"] { background:#eff6ff; border-color:#93c5fd; color:#1d4ed8; }
+.matrix-select[data-val="V"] { background:#f8fafc; border-color:#cbd5e1; color:#475569; }
+.matrix-select[data-val="A"] { background:#fffbeb; border-color:#fcd34d; color:#b45309; }
+.matrix-select[data-val="-"] { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+.matrix-select.changed      { outline: 2px solid #a855f7; outline-offset: 1px; }
+</style>
+
+<script>
+function markChanged(sel) {
+    sel.dataset.val = sel.value;
+    // Re-apply colour class
+    sel.className = sel.className.replace(/\bchanged\b/,'').trim();
+    sel.classList.add('matrix-select', 'changed');
+    // Restyle
+    const map = { 'F':'#f0fdf4|#86efac|#15803d', 'E':'#eff6ff|#93c5fd|#1d4ed8',
+                  'V':'#f8fafc|#cbd5e1|#475569', 'A':'#fffbeb|#fcd34d|#b45309',
+                  '-':'#f8fafc|#e2e8f0|#94a3b8' };
+    const parts = (map[sel.value] || map['-']).split('|');
+    sel.style.background   = parts[0];
+    sel.style.borderColor  = parts[1];
+    sel.style.color        = parts[2];
+}
+// Apply initial colours on load
+document.querySelectorAll('.matrix-select').forEach(sel => {
+    markChanged(sel);
+    sel.classList.remove('changed');
+});
+</script>
+
+<?php endif; // end can_manage_users modal ?>
 
 <?php require_once '../includes/footer.php'; ?>

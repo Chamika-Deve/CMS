@@ -45,7 +45,7 @@ if ($role !== 'SuperAdmin') {
                 </div>
                 <div>
                     <h1 class="text-2xl font-black text-white tracking-tight">Shop Access Suspended</h1>
-                    <p class="text-xs text-red-400 font-bold uppercase tracking-wider mt-1">Deactivated by SuperAdmin Engineer</p>
+                    <p class="text-xs text-red-400 font-bold uppercase tracking-wider mt-1">Deactivated by System Administrator</p>
                 </div>
                 <div class="p-4 bg-red-950/40 rounded-2xl border border-red-500/20 text-xs text-slate-300 leading-relaxed text-left">
                     <?php echo nl2br(htmlspecialchars($shop_lock_message)); ?>
@@ -533,7 +533,7 @@ if (empty($initials)) $initials = 'U';
                         <span class="ml-3 text-[14px]"><?php echo __('nav_dashboard'); ?></span>
                     </a>
                     
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Cashier'])): ?>
+                    <?php if (can_access_page('pos.php')): ?>
                     <a href="pos.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('pos.php'); ?>">
                         <i class="fa-solid fa-cash-register w-5 text-center text-[15px] <?php echo getIconColor('pos.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_pos'); ?></span>
@@ -544,14 +544,14 @@ if (empty($initials)) $initials = 'U';
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Technician', 'Cashier'])): ?>
+                    <?php if (can_access_page('repairs.php')): ?>
                     <a href="repairs.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('repairs.php'); ?>">
                         <i class="fa-solid fa-wrench w-5 text-center text-[15px] <?php echo getIconColor('repairs.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_repairs'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Cashier', 'Accountant'])): ?>
+                    <?php if (can_access_page('customers.php')): ?>
                     <a href="customers.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('customers.php'); ?>">
                         <i class="fa-solid fa-users w-5 text-center text-[15px] <?php echo getIconColor('customers.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_customers'); ?></span>
@@ -564,28 +564,28 @@ if (empty($initials)) $initials = 'U';
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-2"><?php echo __('nav_inventory_supply'); ?></p>
                 <div class="space-y-1">
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Inventory', 'Cashier', 'Technician', 'Accountant'])): ?>
+                    <?php if (can_access_page('products.php')): ?>
                     <a href="products.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('products.php'); ?>">
                         <i class="fa-solid fa-boxes-stacked w-5 text-center text-[15px] <?php echo getIconColor('products.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_products'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Inventory'])): ?>
+                    <?php if (can_access_page('purchases.php')): ?>
                     <a href="purchases.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('purchases.php'); ?>">
                         <i class="fa-solid fa-cart-flatbed w-5 text-center text-[15px] <?php echo getIconColor('purchases.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_purchases'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Inventory', 'Accountant'])): ?>
+                    <?php if (can_access_page('suppliers.php')): ?>
                     <a href="suppliers.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('suppliers.php'); ?>">
                         <i class="fa-solid fa-truck-field w-5 text-center text-[15px] <?php echo getIconColor('suppliers.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_suppliers'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory', 'Cashier'])): ?>
+                    <?php if (can_access_page('warranty.php')): ?>
                     <a href="warranty.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('warranty.php'); ?>">
                         <i class="fa-solid fa-shield-halved w-5 text-center text-[15px] <?php echo getIconColor('warranty.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_warranty'); ?></span>
@@ -598,21 +598,21 @@ if (empty($initials)) $initials = 'U';
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-2"><?php echo __('nav_finance_control'); ?></p>
                 <div class="space-y-1">
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Accountant', 'Cashier'])): ?>
+                    <?php if (can_access_page('accounting.php')): ?>
                     <a href="accounting.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('accounting.php'); ?>">
                         <i class="fa-solid fa-coins w-5 text-center text-[15px] <?php echo getIconColor('accounting.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_accounting'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Accountant', 'Technician', 'Inventory'])): ?>
+                    <?php if (can_access_page('reports.php')): ?>
                     <a href="reports.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('reports.php'); ?>">
                         <i class="fa-solid fa-chart-pie w-5 text-center text-[15px] <?php echo getIconColor('reports.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_reports'); ?></span>
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'SuperAdmin'])): ?>
+                    <?php if (in_array($role, ['Admin', 'Manager', 'SuperAdmin'], true)): ?>
                     <a href="users.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('users.php'); ?>">
                         <i class="fa-solid fa-user-gear w-5 text-center text-[15px] <?php echo getIconColor('users.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_staff'); ?></span>
@@ -622,8 +622,15 @@ if (empty($initials)) $initials = 'U';
                         <span class="ml-3 text-[14px]"><?php echo __('nav_audit'); ?></span>
                     </a>
                     <?php endif; ?>
+                    <?php if (!in_array($role, ['Admin', 'Manager', 'SuperAdmin'], true)): ?>
+                    <!-- All other roles: show Permission Matrix as read-only -->
+                    <a href="users.php?tab=matrix" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo (basename($_SERVER['PHP_SELF']) === 'users.php' && ($_GET['tab'] ?? '') === 'matrix') ? 'active' : ''; ?>">
+                        <i class="fa-solid fa-table-cells w-5 text-center text-[15px] text-slate-400 group-hover:text-emerald-500"></i>
+                        <span class="ml-3 text-[14px]">Permission Matrix</span>
+                    </a>
+                    <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'SuperAdmin'])): ?>
+                    <?php if (can_access_page('shop_settings.php')): ?>
                     <a href="shop_settings.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('shop_settings.php'); ?>">
                         <i class="fa-solid fa-store w-5 text-center text-[15px] <?php echo getIconColor('shop_settings.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_shop_settings'); ?></span>

@@ -115,32 +115,86 @@ if (!function_exists('abort_request')) {
     }
 }
 
-if (!function_exists('page_role_map')) {
-    function page_role_map(): array
+if (!function_exists('get_page_access_level')) {
+    function get_page_access_level(string $page, string $role): string
     {
-        return [
-            'dashboard.php' => [],
-            'pos.php' => ['Admin', 'Manager', 'Cashier'],
-            'print_bill.php' => ['Admin', 'Manager', 'Cashier'],
-            'build_pc.php' => ['Admin', 'Manager', 'Cashier'],
-            'print_quote.php' => ['Admin', 'Manager', 'Cashier'],
-            'repairs.php' => ['Admin', 'Manager', 'Technician', 'Cashier'],
-            'customers.php' => ['Admin', 'Manager', 'Cashier', 'Accountant'],
-            'products.php' => ['Admin', 'Manager', 'Inventory', 'Cashier', 'Technician', 'Accountant'],
-            'product_add.php' => ['Admin', 'Manager', 'Inventory'],
-            'product_edit.php' => ['Admin', 'Manager', 'Inventory'],
-            'product_serials.php' => ['Admin', 'Manager', 'Inventory'],
-            'purchases.php' => ['Admin', 'Manager', 'Inventory'],
-            'suppliers.php' => ['Admin', 'Manager', 'Inventory', 'Accountant'],
-            'warranty.php' => ['Admin', 'Manager', 'Technician', 'Inventory', 'Cashier'],
-            'accounting.php' => ['Admin', 'Manager', 'Accountant', 'Cashier'],
-            'reports.php' => ['Admin', 'Manager', 'Accountant', 'Technician', 'Inventory'],
-            'users.php' => ['Admin', 'Manager', 'SuperAdmin'],
-            'audit_log.php' => ['Admin', 'Manager', 'SuperAdmin'],
-            'shop_settings.php' => ['Admin', 'SuperAdmin'],
-            'settings.php' => ['SuperAdmin'],
-            'api_status.php' => [],
+        if ($role === 'SuperAdmin') {
+            return 'F';
+        }
+
+        $page_module_map = [
+            'dashboard.php'       => 'Dashboard / Business KPIs',
+            'reports.php'         => 'Dashboard / Business KPIs',
+            'pos.php'             => 'POS / Sales & Barcode Scanning',
+            'print_bill.php'      => 'POS / Sales & Barcode Scanning',
+            'build_pc.php'        => 'POS / Sales & Barcode Scanning',
+            'print_quote.php'     => 'POS / Sales & Barcode Scanning',
+            'customers.php'       => 'POS / Sales & Barcode Scanning',
+            'products.php'        => 'Products / Inventory & Serials',
+            'product_add.php'     => 'Products / Inventory & Serials',
+            'product_edit.php'    => 'Products / Inventory & Serials',
+            'product_serials.php' => 'Products / Inventory & Serials',
+            'warranty.php'        => 'Products / Inventory & Serials',
+            'repairs.php'         => 'Repair & Service Jobs Workbench',
+            'purchases.php'       => 'Suppliers & Purchasing (POs/GRN)',
+            'suppliers.php'       => 'Suppliers & Purchasing (POs/GRN)',
+            'accounting.php'      => 'Accounting, Expenses & Cash Drawer',
+            'users.php'           => 'User Impersonation & Security Override',
+            'audit_log.php'       => 'User Impersonation & Security Override',
+            'shop_settings.php'   => 'System Infrastructure & APIs',
+            'settings.php'        => 'Database Backups & Schema Migrations',
+            'api_status.php'      => 'System Infrastructure & APIs',
         ];
+
+        $module = $page_module_map[$page] ?? null;
+        if (!$module) {
+            return 'F';
+        }
+
+        global $pdo;
+        static $permissions_cache = [];
+        if (!isset($permissions_cache[$role]) && isset($pdo) && $pdo instanceof PDO) {
+            try {
+                $stmt = $pdo->prepare("SELECT module, access FROM role_permissions WHERE role = ?");
+                $stmt->execute([$role]);
+                $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+                $permissions_cache[$role] = $rows ?: [];
+            } catch (Throwable $e) {
+                $permissions_cache[$role] = [];
+            }
+        }
+
+        if (isset($permissions_cache[$role][$module])) {
+            return $permissions_cache[$role][$module];
+        }
+
+        // Fallbacks matching initial seed if DB table hasn't loaded yet
+        $defaults = [
+            'Dashboard / Business KPIs'          => ['Admin'=>'F', 'Manager'=>'F', 'Cashier'=>'V', 'Inventory'=>'V', 'Accountant'=>'V'],
+            'POS / Sales & Barcode Scanning'     => ['Admin'=>'F', 'Manager'=>'F', 'Cashier'=>'E', 'Accountant'=>'V'],
+            'Products / Inventory & Serials'     => ['Admin'=>'F', 'Manager'=>'F', 'Inventory'=>'F', 'Cashier'=>'V', 'Technician'=>'V', 'Accountant'=>'V'],
+            'Repair & Service Jobs Workbench'    => ['Admin'=>'F', 'Manager'=>'F', 'Technician'=>'E', 'Cashier'=>'V', 'Accountant'=>'V'],
+            'Suppliers & Purchasing (POs/GRN)'   => ['Admin'=>'F', 'Inventory'=>'F', 'Manager'=>'E', 'Accountant'=>'V'],
+            'Accounting, Expenses & Cash Drawer' => ['Admin'=>'F', 'Accountant'=>'F', 'Manager'=>'V', 'Cashier'=>'E'],
+            'User Impersonation & Security Override' => ['Admin'=>'F', 'Manager'=>'F'],
+        ];
+
+        return $defaults[$module][$role] ?? '-';
+    }
+}
+
+if (!function_exists('can_access_page')) {
+    function can_access_page(string $page): bool
+    {
+        $role = $_SESSION['user']['role'] ?? '';
+        if ($role === '') {
+            return false;
+        }
+        // users.php tab=matrix is accessible to all logged in users for viewing matrix
+        if ($page === 'users.php') {
+            return true;
+        }
+        return get_page_access_level($page, $role) !== '-';
     }
 }
 
@@ -200,15 +254,26 @@ if (!function_exists('enforce_page_access')) {
                     }
                 }
             } catch (Throwable $ignored) {
-                // Keep the existing session usable during a temporary database
-                // outage; page-level database handling will show the outage.
+                // Keep the existing session usable during a temporary database outage
             }
         }
 
-        $roles = page_role_map()[$page] ?? [];
         $role = $_SESSION['user']['role'] ?? '';
-        if ($roles !== [] && !in_array($role, $roles, true)) {
+        $accessLevel = get_page_access_level($page, $role);
+
+        // Allow users.php for viewing matrix
+        if ($page === 'users.php' && ($role === 'Admin' || $role === 'Manager' || $role === 'SuperAdmin' || ($_GET['tab'] ?? '') === 'matrix')) {
+            // OK
+        } elseif ($accessLevel === '-') {
             abort_request(403, 'Your account does not have permission to access this module.', $isJson);
+        }
+
+        // Check POST requests on View-Only (V) access
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $accessLevel === 'V') {
+            $isMatrixSave = ($page === 'users.php' && ($_POST['action'] ?? '') === 'save_matrix' && $role === 'SuperAdmin');
+            if (!$isMatrixSave) {
+                abort_request(403, 'Your account has View-Only permission for this module. You cannot save or perform modifications.', $isJson);
+            }
         }
 
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !is_valid_csrf_token()) {

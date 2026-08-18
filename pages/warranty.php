@@ -4,14 +4,14 @@ require_once '../includes/header.php';
 
 $msg = '';
 $msg_type = 'success';
-$can_update_claims = in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory'], true);
+$can_update_claims = can_write_page('warranty.php');
 
 // Handle POST actions for Warranty Claims
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
-    if ($action === 'update_claim' && !in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory'], true)) {
-        abort_request(403, 'You do not have permission to update warranty claims.');
+    if (!$can_update_claims) {
+        abort_request(403, 'You do not have permission to modify warranty claims.');
     }
 
     if ($action === 'create_claim' && $pdo) {

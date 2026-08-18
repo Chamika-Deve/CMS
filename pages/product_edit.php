@@ -2,6 +2,10 @@
 require_once '../includes/db.php';
 require_once '../includes/header.php';
 
+if (!can_write_page('products.php')) {
+    abort_request(403, 'Your account does not have permission to edit products.');
+}
+
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     echo "<div class='p-8'><div class='bg-red-50 text-red-600 p-4 rounded-2xl'>Invalid Product ID. <a href='products.php' class='underline'>Return to products</a></div></div>";
     require_once '../includes/footer.php';

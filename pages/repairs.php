@@ -48,17 +48,17 @@ if ($pdo) {
 // Handle POST actions for repairs
 $msg = '';
 $msg_type = 'success';
-$can_update_repairs = in_array($role, ['Admin', 'Manager', 'Technician'], true);
+$can_update_repairs = can_write_page('repairs.php');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
-    if ($action === 'update_status' && !in_array($role, ['Admin', 'Manager', 'Technician'], true)) {
+    if ($action === 'update_status' && !$can_update_repairs) {
         abort_request(403, 'You do not have permission to update repair jobs.');
     }
 
-    if ($action === 'create_ticket' && !in_array($role, ['Admin', 'Manager'], true)) {
-        $msg = 'Access denied. Only Admin or Manager can create device intake tickets.';
+    if ($action === 'create_ticket' && !$can_update_repairs) {
+        $msg = 'Access denied. You do not have permission to create device intake tickets.';
         $msg_type = 'error';
     } elseif ($action === 'create_ticket' && $pdo) {
         try {
@@ -216,7 +216,7 @@ if ($pdo) {
                 <i class="fa-solid fa-qrcode text-emerald-600"></i>
                 <span>Public Status Portal</span>
             </a>
-            <?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
+            <?php if (can_write_page('repairs.php')): ?>
             <button onclick="openIntakeModal()" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all shadow-sm shadow-emerald-500/25 flex items-center gap-2">
                 <i class="fa-solid fa-plus text-xs"></i>
                 <span>New Device Intake</span>
@@ -424,8 +424,8 @@ if ($pdo) {
 
 </div>
 
-<!-- Modal 1: New Device Intake Modal (Admin/Manager only) -->
-<?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
+<!-- Modal 1: New Device Intake Modal -->
+<?php if (can_write_page('repairs.php')): ?>
 <div id="intakeModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl shadow-floating border border-slate-100 w-full max-w-2xl p-7 relative max-h-[90vh] overflow-y-auto">
         <button onclick="closeIntakeModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors">

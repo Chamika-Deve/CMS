@@ -234,10 +234,12 @@ $chart_series = array_values($daily_sales_map);
                 <a href="products.php" class="px-5 py-2.5 rounded-2xl border border-slate-200/90 text-slate-700 hover:bg-slate-50 text-xs sm:text-sm font-bold transition-all shadow-sm">
                     See All
                 </a>
+                <?php if (can_write_page('products.php')): ?>
                 <a href="product_add.php" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all flex items-center gap-2 shadow-sm shadow-emerald-500/25">
                     <span>Add Item</span>
                     <i class="fa-solid fa-plus text-xs"></i>
                 </a>
+                <?php endif; ?>
             </div>
         </div>
 

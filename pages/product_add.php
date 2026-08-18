@@ -2,6 +2,10 @@
 require_once '../includes/db.php';
 require_once '../includes/header.php';
 
+if (!can_write_page('products.php')) {
+    abort_request(403, 'Your account does not have permission to add products.');
+}
+
 $success = false;
 $error = '';
 

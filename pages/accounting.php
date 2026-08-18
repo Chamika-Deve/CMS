@@ -4,13 +4,13 @@ require_once '../includes/header.php';
 
 $msg = '';
 $msg_type = 'success';
-$can_record_expenses = in_array($role, ['Admin', 'Manager', 'Accountant'], true);
+$can_record_expenses = can_write_page('accounting.php');
 
 // Handle POST actions for Expenses and Cash Drawer
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
-    if ($action === 'add_expense' && !in_array($role, ['Admin', 'Manager', 'Accountant'], true)) {
+    if ($action === 'add_expense' && !$can_record_expenses) {
         abort_request(403, 'You do not have permission to record expenses.');
     }
 
