@@ -2,6 +2,49 @@
 require_once '../includes/db.php';
 require_once '../includes/header.php';
 
+// ── Schema migration: ensure repair_jobs has all required columns ──────────
+if ($pdo) {
+    $addCol = function($col, $def) use ($pdo) {
+        try {
+            $chk = $pdo->query("SHOW COLUMNS FROM `repair_jobs` LIKE '$col'");
+            if (!$chk->fetch()) {
+                $pdo->exec("ALTER TABLE `repair_jobs` ADD COLUMN `$col` $def");
+            }
+        } catch (Exception $e) {}
+    };
+
+    // Core ticket fields
+    $addCol('ticket_no',            "varchar(60) NOT NULL DEFAULT ''");
+    $addCol('device_type',          "varchar(100) NOT NULL DEFAULT 'Other'");
+    $addCol('device_brand',         "varchar(100) NOT NULL DEFAULT ''");
+    $addCol('device_model',         "varchar(100) NOT NULL DEFAULT ''");
+    $addCol('passcode_pin',         "varchar(50) DEFAULT NULL");
+    $addCol('accessories_included', "text DEFAULT NULL");
+    $addCol('estimated_cost',       "decimal(10,2) NOT NULL DEFAULT 0.00");
+    $addCol('total_amount',         "decimal(10,2) NOT NULL DEFAULT 0.00");
+    $addCol('labor_fee',            "decimal(10,2) NOT NULL DEFAULT 0.00");
+    $addCol('parts_cost',           "decimal(10,2) NOT NULL DEFAULT 0.00");
+    $addCol('diagnosis_notes',      "text DEFAULT NULL");
+    $addCol('is_quote_approved',    "tinyint(1) NOT NULL DEFAULT 0");
+    $addCol('public_token',         "varchar(80) DEFAULT NULL");
+
+    // Fix legacy device_name column — must have a default so new INSERTs (which omit it) don't fail
+    try {
+        $pdo->exec("ALTER TABLE `repair_jobs` MODIFY COLUMN `device_name` varchar(255) NOT NULL DEFAULT ''");
+    } catch (Exception $e) {}
+
+    // Status ENUM — modify to include all used values
+    try {
+        $pdo->exec("ALTER TABLE `repair_jobs` MODIFY COLUMN `status` varchar(50) NOT NULL DEFAULT 'Received'");
+    } catch (Exception $e) {}
+
+    // Unique index on ticket_no (ignore if already exists)
+    try {
+        $pdo->exec("ALTER TABLE `repair_jobs` ADD UNIQUE KEY `uq_ticket_no` (`ticket_no`)");
+    } catch (Exception $e) {}
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Handle POST actions for repairs
 $msg = '';
 $msg_type = 'success';
@@ -14,7 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         abort_request(403, 'You do not have permission to update repair jobs.');
     }
 
-    if ($action === 'create_ticket' && $pdo) {
+    if ($action === 'create_ticket' && !in_array($role, ['Admin', 'Manager'], true)) {
+        $msg = 'Access denied. Only Admin or Manager can create device intake tickets.';
+        $msg_type = 'error';
+    } elseif ($action === 'create_ticket' && $pdo) {
         try {
             $ticket_no = 'RPR-' . date('ymd') . '-' . strtoupper(bin2hex(random_bytes(4)));
             $customer_id = (int)$_POST['customer_id'];
@@ -170,10 +216,12 @@ if ($pdo) {
                 <i class="fa-solid fa-qrcode text-emerald-600"></i>
                 <span>Public Status Portal</span>
             </a>
+            <?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
             <button onclick="openIntakeModal()" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all shadow-sm shadow-emerald-500/25 flex items-center gap-2">
                 <i class="fa-solid fa-plus text-xs"></i>
                 <span>New Device Intake</span>
             </button>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -376,7 +424,8 @@ if ($pdo) {
 
 </div>
 
-<!-- Modal 1: New Device Intake Modal -->
+<!-- Modal 1: New Device Intake Modal (Admin/Manager only) -->
+<?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
 <div id="intakeModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl shadow-floating border border-slate-100 w-full max-w-2xl p-7 relative max-h-[90vh] overflow-y-auto">
         <button onclick="closeIntakeModal()" class="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
@@ -490,6 +539,7 @@ if ($pdo) {
         </form>
     </div>
 </div>
+<?php endif; // end Admin/Manager only intake modal ?>
 
 <!-- Modal 2: Technician Diagnostic & Status Update Modal -->
 <div id="manageJobModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
