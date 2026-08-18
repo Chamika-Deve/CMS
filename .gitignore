@@ -1,1 +1,8 @@
-d.webp
+.env
+.env.*
+!.env.example
+*.log
+
+# Runtime uploads should not be committed.
+uploads/logo/*
+!uploads/logo/.gitkeep

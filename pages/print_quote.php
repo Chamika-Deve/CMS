@@ -1,11 +1,7 @@
 <?php
-session_start();
-if (!isset($_SESSION['user'])) {
-    header("Location: ../index.php");
-    exit;
-}
-
 require_once '../includes/db.php';
+require_once '../includes/auth.php';
+enforce_page_access('print_quote.php');
 
 // Fetch Settings
 $settings = [];

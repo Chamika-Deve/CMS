@@ -5,9 +5,6 @@ require_once '../includes/header.php';
 $logs = [];
 if ($pdo) {
     try {
-        $pdo->exec("ALTER TABLE `activity_logs` ADD COLUMN IF NOT EXISTS `module` varchar(100) DEFAULT 'System'");
-        $pdo->exec("ALTER TABLE `activity_logs` ADD COLUMN IF NOT EXISTS `details` text DEFAULT NULL");
-
         $stmt = $pdo->query("
             SELECT al.*, u.name as user_name, u.role as user_role
             FROM activity_logs al
@@ -19,14 +16,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($logs) && !$pdo) {
-    $logs = [
-        ['id' => 1, 'action' => 'Create Repair Ticket', 'module' => 'Repairs', 'user_name' => 'Cashier User', 'user_role' => 'Cashier', 'details' => 'Created ticket RPR-260816-101 for Dell XPS 15 9500', 'timestamp' => date('Y-m-d H:i:s', strtotime('-1 hour'))],
-        ['id' => 2, 'action' => 'Complete POS Sale', 'module' => 'POS', 'user_name' => 'Cashier User', 'user_role' => 'Cashier', 'details' => 'Invoice INV-20260816-01 | Total: ' . htmlspecialchars($currency_symbol) . ' 420.00 (Cash)', 'timestamp' => date('Y-m-d H:i:s', strtotime('-2 hours'))],
-        ['id' => 3, 'action' => 'Update Product Price', 'module' => 'Products', 'user_name' => 'Manager User', 'user_role' => 'Manager', 'details' => 'Intel Core i7-13700K selling price updated to ' . htmlspecialchars($currency_symbol) . ' 420', 'timestamp' => date('Y-m-d H:i:s', strtotime('-5 hours'))],
-        ['id' => 4, 'action' => 'Open Cash Drawer', 'module' => 'Accounting', 'user_name' => 'Cashier User', 'user_role' => 'Cashier', 'details' => 'Morning shift starting float ' . htmlspecialchars($currency_symbol) . ' 100.00 logged', 'timestamp' => date('Y-m-d H:i:s', strtotime('-8 hours'))]
-    ];
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -43,7 +32,7 @@ if (empty($logs) && !$pdo) {
         
         <div class="flex items-center gap-2">
             <span class="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100">
-                <i class="fa-solid fa-shield-halved mr-1"></i> Tamper-evident Logging
+                <i class="fa-solid fa-shield-halved mr-1"></i> Recent Activity Logging
             </span>
         </div>
     </div>

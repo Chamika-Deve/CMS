@@ -1,67 +1,79 @@
 <?php
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 require_once __DIR__ . '/../includes/db.php';
 
 $search_query = trim($_GET['ticket'] ?? $_GET['q'] ?? '');
 $job = null;
 $error = '';
 $quote_msg = '';
+$shop_name = 'TechShop';
+$shop_phone = '+94 77 123 4567';
+$currency_symbol = 'Rs.';
+$base_prefix = str_contains($_SERVER['SCRIPT_NAME'] ?? '', '/pages/') ? '../' : '';
 
-// Handle customer quote approval
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['action']) && $_POST['action'] === 'customer_approve_quote') {
-    $job_id = (int)$_POST['job_id'];
-    $token = $_POST['token'] ?? '';
-    if ($pdo && $job_id > 0) {
-        $stmt_app = $pdo->prepare("UPDATE repair_jobs SET is_quote_approved = 1, status = IF(status = 'Received' OR status = 'Diagnosing', 'In Repair', status), updated_at = NOW() WHERE id = ? AND (public_token = ? OR ticket_no = ?)");
-        $stmt_app->execute([$job_id, $token, $search_query]);
-        $quote_msg = 'Thank you! You have approved this repair quotation. Our technician will proceed immediately.';
-    }
-}
-
-if (!empty($search_query) && $pdo) {
+if ($pdo) {
     try {
-        $stmt = $pdo->prepare("
-            SELECT r.*, c.name as customer_name, c.phone as customer_phone, u.name as technician_name
-            FROM repair_jobs r
-            LEFT JOIN customers c ON r.customer_id = c.id
-            LEFT JOIN users u ON r.technician_id = u.id
-            WHERE r.ticket_no = ? OR r.public_token = ? OR r.serial_number = ? OR c.phone = ?
-            ORDER BY r.id DESC LIMIT 1
-        ");
-        $stmt->execute([$search_query, $search_query, $search_query, $search_query]);
-        $job = $stmt->fetch();
-        if (!$job) {
-            $error = 'No repair job found matching "' . htmlspecialchars($search_query) . '". Please verify your ticket number or phone.';
+        $settingsStatement = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('shop_name', 'shop_phone', 'currency_symbol')");
+        foreach ($settingsStatement->fetchAll(PDO::FETCH_KEY_PAIR) as $key => $value) {
+            if ($key === 'shop_name' && $value !== '') $shop_name = $value;
+            if ($key === 'shop_phone' && $value !== '') $shop_phone = $value;
+            if ($key === 'currency_symbol' && $value !== '') $currency_symbol = $value;
         }
-    } catch (Exception $e) {
-        $error = $e->getMessage();
+    } catch (Throwable $ignored) {
     }
 }
 
-// Fallback demo job if offline and searched demo ticket
-if (!$job && (empty($search_query) || stripos($search_query, 'demo') !== false || stripos($search_query, '101') !== false || stripos($search_query, 'RPR') !== false)) {
-    if (!empty($search_query)) {
-        $job = [
-            'id' => 1,
-            'ticket_no' => 'RPR-260816-101',
-            'customer_name' => 'Alice Wonderland',
-            'customer_phone' => '555-1234',
-            'device_type' => 'Laptop',
-            'device_brand' => 'Dell',
-            'device_model' => 'XPS 15 9500',
-            'serial_number' => 'DL-98214-XPS',
-            'issue_description' => 'No display output, power LED blinks 3 amber 2 white (RAM failure).',
-            'diagnosis_notes' => 'Tested with replacement DDR4 SODIMM. Motherboard channel 1 working. Replacement RAM installed.',
-            'accessories_included' => 'Original 130W USB-C charger',
-            'technician_name' => 'Alex (Senior Hardware Specialist)',
-            'status' => 'Ready for Pickup',
-            'labor_fee' => 45.00,
-            'parts_cost' => 65.00,
-            'total_amount' => 110.00,
-            'is_quote_approved' => 1,
-            'public_token' => 'demo_token_1',
-            'warranty_days' => 60,
-            'received_date' => date('Y-m-d H:i:s', strtotime('-2 days'))
-        ];
+// Quote approval requires the unguessable per-ticket public token. A ticket
+// number by itself is sufficient for viewing, but never for changing data.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'customer_approve_quote') {
+    $job_id = (int)($_POST['job_id'] ?? 0);
+    $token = trim($_POST['token'] ?? '');
+
+    if (!$pdo) {
+        $error = 'The repair tracker is temporarily unavailable.';
+    } elseif ($job_id < 1 || !preg_match('/^[a-f0-9]{32,64}$/i', $token)) {
+        $error = 'The quote approval link is invalid.';
+    } else {
+        try {
+            $stmt_app = $pdo->prepare("UPDATE repair_jobs SET is_quote_approved = 1, status = IF(status IN ('Received', 'Diagnosing'), 'In Repair', status), updated_at = NOW() WHERE id = ? AND public_token = ?");
+            $stmt_app->execute([$job_id, $token]);
+            if ($stmt_app->rowCount() === 1) {
+                $quote_msg = 'Thank you! You approved this repair quotation.';
+            } else {
+                $error = 'This quote could not be approved. Refresh the tracking link and try again.';
+            }
+        } catch (Throwable $exception) {
+            error_log('Repair quote approval failed: ' . $exception->getMessage());
+            $error = 'The quote approval could not be completed right now.';
+        }
+    }
+}
+
+if ($search_query !== '') {
+    if (!$pdo) {
+        $error = 'The repair tracker is temporarily unavailable.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("
+                SELECT r.*, u.name AS technician_name
+                FROM repair_jobs r
+                LEFT JOIN users u ON r.technician_id = u.id
+                WHERE r.ticket_no = ? OR r.public_token = ?
+                ORDER BY r.id DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$search_query, $search_query]);
+            $job = $stmt->fetch();
+            if (!$job && $error === '') {
+                $error = 'No repair job matched that tracking reference. Check the ticket number and try again.';
+            }
+        } catch (Throwable $exception) {
+            error_log('Repair tracking lookup failed: ' . $exception->getMessage());
+            $error = 'The repair tracker could not complete your search right now.';
+        }
     }
 }
 
@@ -76,7 +88,9 @@ $status_steps = [
 ];
 
 $step_keys = array_keys($status_steps);
-$curr_step_idx = $job ? array_search($job['status'], $step_keys) : 0;
+$pipeline_status = $job['status'] ?? 'Received';
+if ($pipeline_status === 'Closed') $pipeline_status = 'Completed';
+$curr_step_idx = array_search($pipeline_status, $step_keys, true);
 if ($curr_step_idx === false) $curr_step_idx = 0;
 ?>
 <!DOCTYPE html>
@@ -84,7 +98,7 @@ if ($curr_step_idx === false) $curr_step_idx = 0;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customer Repair Status Tracker - TechShop</title>
+    <title>Customer Repair Status Tracker - <?php echo htmlspecialchars($shop_name); ?></title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">

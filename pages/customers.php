@@ -5,27 +5,13 @@ require_once '../includes/header.php';
 $msg = '';
 $msg_type = 'success';
 
-// Ensure table columns exist if running on older database schema
-if ($pdo) {
-    $ensureCol = function($tbl, $col, $def) use ($pdo) {
-        try {
-            $chk = $pdo->query("SHOW COLUMNS FROM `$tbl` LIKE '$col'");
-            if (!$chk->fetch()) {
-                $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` $def");
-            }
-        } catch (Exception $e) {}
-    };
-
-    $ensureCol('customers', 'company_name', "varchar(255) DEFAULT NULL");
-    $ensureCol('customers', 'customer_type', "varchar(50) NOT NULL DEFAULT 'Individual'");
-    $ensureCol('customers', 'credit_limit', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('customers', 'store_credit', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('customers', 'points', "int NOT NULL DEFAULT 0");
-}
-
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
+
+    if ($action === 'delete_customer' && !in_array($role, ['Admin', 'Manager'], true)) {
+        abort_request(403, 'Only a manager or administrator may delete customers.');
+    }
 
     if ($action === 'add_customer' && $pdo) {
         try {
@@ -36,21 +22,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $company = trim($_POST['company_name'] ?? '');
             $type = $_POST['customer_type'] ?? 'Individual';
             $credit_limit = (float)($_POST['credit_limit'] ?? 0);
-            $store_credit = (float)($_POST['store_credit'] ?? 0);
+            $store_credit = max(0, (float)($_POST['store_credit'] ?? 0));
+
+            if ($name === '' || $phone === '') {
+                throw new InvalidArgumentException('Customer name and phone are required.');
+            }
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Enter a valid customer email address.');
+            }
+            if (!in_array($type, ['Individual', 'Corporate', 'VIP'], true)) {
+                throw new InvalidArgumentException('Invalid customer type.');
+            }
+            $credit_limit = max(0, $credit_limit);
 
             $stmt = $pdo->prepare("INSERT INTO customers (name, phone, email, address, company_name, customer_type, credit_limit, store_credit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$name, $phone, $email, $address, $company, $type, $credit_limit, $store_credit]);
             $msg = "Customer \"$name\" added successfully!";
         } catch (Exception $e) {
-            // Fallback for basic schema without extra columns
-            try {
-                $stmt = $pdo->prepare("INSERT INTO customers (name, phone, email, address) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$name, $phone, $email, $address]);
-                $msg = "Customer \"$name\" added successfully!";
-            } catch (Exception $e2) {
-                $msg = "Error adding customer: " . $e2->getMessage();
-                $msg_type = 'error';
-            }
+            $msg = 'Error adding customer: ' . safe_error_message($e);
+            $msg_type = 'error';
         }
     }
 
@@ -63,8 +53,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $address = trim($_POST['address'] ?? '');
             $company = trim($_POST['company_name'] ?? '');
             $type = $_POST['customer_type'] ?? 'Individual';
-            $credit_limit = (float)($_POST['credit_limit'] ?? 0);
-            $store_credit = (float)($_POST['store_credit'] ?? 0);
+            $credit_limit = max(0, (float)($_POST['credit_limit'] ?? 0));
+            $store_credit = max(0, (float)($_POST['store_credit'] ?? 0));
+
+            if ($name === '' || $phone === '') {
+                throw new InvalidArgumentException('Customer name and phone are required.');
+            }
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Enter a valid customer email address.');
+            }
+            if (!in_array($type, ['Individual', 'Corporate', 'VIP'], true)) {
+                throw new InvalidArgumentException('Invalid customer type.');
+            }
 
             $stmt = $pdo->prepare("UPDATE customers SET name=?, phone=?, email=?, address=?, company_name=?, customer_type=?, credit_limit=?, store_credit=? WHERE id=?");
             $stmt->execute([$name, $phone, $email, $address, $company, $type, $credit_limit, $store_credit, $id]);
@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $msg = "Customer deleted successfully.";
             }
         } catch (Exception $e) {
-            $msg = "Error deleting customer: " . $e->getMessage();
+            $msg = "Error deleting customer: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -127,43 +127,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($customers) && !$pdo) {
-    $customers = [
-        [
-            'id' => 1,
-            'name' => 'Walk-in Customer',
-            'phone' => '0000000000',
-            'email' => 'walkin@shop.local',
-            'address' => 'Over the Counter',
-            'company_name' => '',
-            'customer_type' => 'Individual',
-            'credit_limit' => 0.00,
-            'store_credit' => 0.00,
-            'points' => 0,
-            'total_purchases' => 12,
-            'total_spent' => 1520.00,
-            'total_repairs' => 0
-        ],
-        [
-            'id' => 2,
-            'name' => 'Alice Wonderland',
-            'phone' => '555-1234',
-            'email' => 'alice@example.com',
-            'address' => '123 Tech Lane, Colombo',
-            'company_name' => 'Wonderland Labs',
-            'customer_type' => 'Corporate',
-            'credit_limit' => 1500.00,
-            'store_credit' => 50.00,
-            'points' => 240,
-            'total_purchases' => 4,
-            'total_spent' => 2840.00,
-            'total_repairs' => 2
-        ]
-    ];
-    $total_customers = 2;
-    $total_points = 240;
-    $total_credit = 50.00;
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -320,7 +283,7 @@ if (empty($customers) && !$pdo) {
                                 <button onclick="openCustomerModal('edit', <?php echo htmlspecialchars(json_encode($c)); ?>)" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                 </button>
-                                <?php if (($c['id'] ?? 0) != 1): ?>
+                                <?php if (($c['id'] ?? 0) != 1 && in_array($role, ['Admin', 'Manager'], true)): ?>
                                 <form method="POST" action="customers.php" onsubmit="return confirm('Delete customer <?php echo addslashes($cust_name); ?>?');" class="inline">
                                     <input type="hidden" name="action" value="delete_customer">
                                     <input type="hidden" name="id" value="<?php echo $c['id']; ?>">
@@ -460,6 +423,12 @@ function filterCustomers() {
     const rows = document.querySelectorAll('#customersTable tbody tr');
     rows.forEach(r => {
         r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+</script>
+
+<?php require_once '../includes/footer.php'; ?>
+
     });
 }
 </script>

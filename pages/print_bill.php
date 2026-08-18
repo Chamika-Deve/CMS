@@ -1,10 +1,17 @@
 <?php
 require_once '../includes/db.php';
+require_once '../includes/auth.php';
+enforce_page_access('print_bill.php');
 
 $sale_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-if (!$pdo || !$sale_id) {
-    die("Invalid Request or Database Connection Failed.");
+if (!$pdo) {
+    http_response_code(503);
+    exit('The database is temporarily unavailable.');
+}
+if ($sale_id < 1) {
+    http_response_code(400);
+    exit('A valid sale ID is required.');
 }
 
 // 1. Fetch Settings
@@ -14,8 +21,8 @@ try {
     while ($row = $stmt->fetch()) {
         $settings[$row['setting_key']] = $row['setting_value'];
     }
-} catch (\PDOException $e) {
-    die("Settings Error: " . $e->getMessage());
+} catch (PDOException $e) {
+    error_log('Receipt settings query failed: ' . $e->getMessage());
 }
 
 $shop_name = $settings['shop_name'] ?? 'Shop Name';

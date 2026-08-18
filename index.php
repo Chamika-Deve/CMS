@@ -1,84 +1,90 @@
 <?php
-session_start();
 require_once 'includes/db.php';
+require_once 'includes/auth.php';
+
+if (!empty($_SESSION['user'])) {
+    header('Location: pages/dashboard.php');
+    exit;
+}
 
 $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    
-    if ($pdo) {
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE email = :email");
-        $stmt->execute(['email' => $email]);
-        $user = $stmt->fetch();
-        
-        // Use password_verify since seed data uses bcrypt
-        if ($user && password_verify($password, $user['password'])) {
-            if ($user['status'] != 1) {
-                $error = "Your account is disabled. Contact system administrator.";
-            } else {
-                $is_superadmin = ($user['role'] === 'SuperAdmin');
 
-                // Check System Lockdowns for Non-SuperAdmins
-                if (!$is_superadmin) {
-                    $is_maint = false;
-                    $maint_msg = "System is in Maintenance Mode. Non-admin staff cannot sign in right now.";
-                    $is_shop_disabled = false;
-                    $shop_dis_msg = "This shop account has been deactivated or suspended. Please contact technical engineering support.";
+    if (!is_valid_csrf_token()) {
+        $error = 'Your session expired. Refresh the page and try again.';
+    } elseif (!$pdo) {
+        $error = 'The database is unavailable. Check the database service and connection settings.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
+        $error = 'Enter a valid email address and password.';
+    } else {
+        try {
+            $stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
+            $stmt->execute(['email' => $email]);
+            $user = $stmt->fetch();
+
+            if (!$user || !password_verify($password, $user['password'])) {
+                $error = 'Invalid email or password.';
+            } elseif ((int)$user['status'] !== 1) {
+                $error = 'Your account is disabled. Contact the system administrator.';
+            } else {
+                $isSuperAdmin = $user['role'] === 'SuperAdmin';
+
+                // Non-SuperAdmins must respect maintenance and shop lockdowns.
+                if (!$isSuperAdmin) {
+                    $isMaintenance = false;
+                    $maintenanceMessage = 'System maintenance is in progress. Staff cannot sign in right now.';
+                    $isShopDisabled = false;
+                    $shopDisabledMessage = 'This shop account has been suspended. Contact technical support.';
 
                     try {
-                        $stmt_lock = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('maintenance_mode', 'maintenance_message', 'shop_disabled', 'shop_disabled_message')");
-                        while ($r = $stmt_lock->fetch(PDO::FETCH_ASSOC)) {
-                            if ($r['setting_key'] === 'maintenance_mode' && ($r['setting_value'] === '1' || $r['setting_value'] === 'true')) $is_maint = true;
-                            if ($r['setting_key'] === 'maintenance_message' && !empty($r['setting_value'])) $maint_msg = $r['setting_value'];
-                            if ($r['setting_key'] === 'shop_disabled' && ($r['setting_value'] === '1' || $r['setting_value'] === 'true')) $is_shop_disabled = true;
-                            if ($r['setting_key'] === 'shop_disabled_message' && !empty($r['setting_value'])) $shop_dis_msg = $r['setting_value'];
+                        $lockStatement = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('maintenance_mode', 'maintenance_message', 'shop_disabled', 'shop_disabled_message')");
+                        while ($setting = $lockStatement->fetch(PDO::FETCH_ASSOC)) {
+                            if ($setting['setting_key'] === 'maintenance_mode') {
+                                $isMaintenance = in_array(strtolower($setting['setting_value']), ['1', 'true'], true);
+                            } elseif ($setting['setting_key'] === 'maintenance_message' && $setting['setting_value'] !== '') {
+                                $maintenanceMessage = $setting['setting_value'];
+                            } elseif ($setting['setting_key'] === 'shop_disabled') {
+                                $isShopDisabled = in_array(strtolower($setting['setting_value']), ['1', 'true'], true);
+                            } elseif ($setting['setting_key'] === 'shop_disabled_message' && $setting['setting_value'] !== '') {
+                                $shopDisabledMessage = $setting['setting_value'];
+                            }
                         }
-                    } catch (Exception $e) {}
+                    } catch (Throwable $ignored) {
+                        // Older installations may not have the optional settings yet.
+                    }
 
-                    if ($is_shop_disabled) {
-                        $error = "🛑 " . $shop_dis_msg;
-                    } elseif ($is_maint) {
-                        $error = "🔧 " . $maint_msg;
+                    if ($isShopDisabled) {
+                        $error = $shopDisabledMessage;
+                    } elseif ($isMaintenance) {
+                        $error = $maintenanceMessage;
                     }
                 }
 
-                if (empty($error)) {
+                if ($error === '') {
+                    $sessionVersion = '';
+                    try {
+                        $sessionVersionStatement = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'global_session_version' LIMIT 1");
+                        $sessionVersion = (string)($sessionVersionStatement->fetchColumn() ?: '');
+                    } catch (Throwable $ignored) {
+                    }
+
+                    session_regenerate_id(true);
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    $_SESSION['user_session_version'] = $sessionVersion;
                     $_SESSION['user'] = [
-                        'id' => $user['id'],
+                        'id' => (int)$user['id'],
                         'name' => $user['name'],
                         'email' => $user['email'],
-                        'role' => $user['role']
+                        'role' => $user['role'],
                     ];
-                    header("Location: pages/dashboard.php");
+                    header('Location: pages/dashboard.php');
                     exit;
                 }
             }
-        } else {
-            $error = "Invalid email or password.";
-        }
-    } else {
-        // Standalone offline demo mode fallback
-        $demo_roles = [
-            'superadmin@example.com' => ['id' => 99, 'name' => 'Software Engineer (SuperAdmin)', 'role' => 'SuperAdmin'],
-            'admin@example.com' => ['id' => 1, 'name' => 'Admin User', 'role' => 'Admin'],
-            'manager@example.com' => ['id' => 2, 'name' => 'Manager User', 'role' => 'Manager'],
-            'cashier@example.com' => ['id' => 3, 'name' => 'Cashier User', 'role' => 'Cashier'],
-            'tech@example.com' => ['id' => 4, 'name' => 'Technician Alex', 'role' => 'Technician'],
-            'inventory@example.com' => ['id' => 5, 'name' => 'Inventory Dave', 'role' => 'Inventory'],
-            'accountant@example.com' => ['id' => 6, 'name' => 'Accountant Sarah', 'role' => 'Accountant'],
-        ];
-        if (isset($demo_roles[$email])) {
-            $_SESSION['user'] = [
-                'id' => $demo_roles[$email]['id'],
-                'name' => $demo_roles[$email]['name'],
-                'email' => $email,
-                'role' => $demo_roles[$email]['role']
-            ];
-            header("Location: pages/dashboard.php");
-            exit;
-        } else {
-            $error = "Invalid demo credentials. Select a role below.";
+        } catch (Throwable $exception) {
+            $error = 'Sign-in could not be completed. Check the database schema and server logs.';
         }
     }
 }
@@ -152,13 +158,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" action="index.php" class="space-y-4">
+                <input type="hidden" name="_csrf_token" value="<?php echo htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                 <div>
                     <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5" for="email">Staff Email / Username</label>
                     <div class="relative">
                         <i class="fa-regular fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                         <input type="email" id="email" name="email" required 
                                class="w-full pl-11 pr-4 py-3 bg-white/10 border border-white/10 rounded-2xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all" 
-                               placeholder="user@example.com" value="admin@example.com">
+                               placeholder="user@example.com" value="<?php echo htmlspecialchars($_POST['email'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" autocomplete="username">
                     </div>
                 </div>
 
@@ -168,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                         <input type="password" id="password" name="password" required 
                                class="w-full pl-11 pr-4 py-3 bg-white/10 border border-white/10 rounded-2xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all" 
-                               placeholder="••••••••" value="password">
+                               placeholder="••••••••" autocomplete="current-password">
                     </div>
                 </div>
 

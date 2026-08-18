@@ -4,10 +4,15 @@ require_once '../includes/header.php';
 
 $msg = '';
 $msg_type = 'success';
+$can_record_expenses = in_array($role, ['Admin', 'Manager', 'Accountant'], true);
 
 // Handle POST actions for Expenses and Cash Drawer
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
+
+    if ($action === 'add_expense' && !in_array($role, ['Admin', 'Manager', 'Accountant'], true)) {
+        abort_request(403, 'You do not have permission to record expenses.');
+    }
 
     if ($action === 'add_expense' && $pdo) {
         try {
@@ -18,12 +23,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $expense_date = $_POST['expense_date'] ?? date('Y-m-d');
             $notes = trim($_POST['notes'] ?? '');
             $created_by = $user['id'] ?? null;
+            $allowed_methods = ['Cash', 'Card', 'Bank Transfer'];
+            $date = DateTimeImmutable::createFromFormat('!Y-m-d', $expense_date);
+            if ($title === '' || $amount <= 0 || !in_array($payment_method, $allowed_methods, true)
+                || !$date || $date->format('Y-m-d') !== $expense_date) {
+                throw new InvalidArgumentException('Enter a title, positive amount, valid payment method, and valid date.');
+            }
 
             $stmt = $pdo->prepare("INSERT INTO expenses (category, title, amount, payment_method, expense_date, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$category, $title, $amount, $payment_method, $expense_date, $notes, $created_by]);
-            $msg = "Expense \"$title\" ($ " . number_format($amount, 2) . ") recorded successfully!";
+            $msg = 'Expense "' . $title . '" (' . $currency_symbol . ' ' . number_format($amount, 2) . ') recorded successfully!';
         } catch (Exception $e) {
-            $msg = "Error recording expense: " . $e->getMessage();
+            $msg = "Error recording expense: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -31,11 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'open_drawer' && $pdo) {
         try {
             $opening_cash = (float)($_POST['opening_cash'] ?? 0);
+            if ($opening_cash < 0) {
+                throw new InvalidArgumentException('Opening cash cannot be negative.');
+            }
+            $openCheck = $pdo->query("SELECT id FROM cash_registers WHERE status = 'Open' LIMIT 1");
+            if ($openCheck->fetchColumn()) {
+                throw new RuntimeException('A cash drawer is already open.');
+            }
             $stmt = $pdo->prepare("INSERT INTO cash_registers (user_id, opening_time, opening_cash, status) VALUES (?, NOW(), ?, 'Open')");
             $stmt->execute([$user['id'], $opening_cash]);
             $msg = "Cash drawer opened with starting float of $ " . number_format($opening_cash, 2);
         } catch (Exception $e) {
-            $msg = "Error opening drawer: " . $e->getMessage();
+            $msg = "Error opening drawer: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -45,14 +63,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $drawer_id = (int)$_POST['drawer_id'];
             $actual_cash = (float)($_POST['actual_cash'] ?? 0);
             $system_cash = (float)($_POST['system_cash'] ?? 0);
+            if ($drawer_id < 1 || $actual_cash < 0 || $system_cash < 0) {
+                throw new InvalidArgumentException('Drawer and cash totals must be valid non-negative values.');
+            }
             $diff = $actual_cash - $system_cash;
             $notes = trim($_POST['notes'] ?? '');
 
-            $stmt = $pdo->prepare("UPDATE cash_registers SET closing_time = NOW(), closing_cash_actual = ?, closing_cash_system = ?, cash_difference = ?, notes = ?, status = 'Closed' WHERE id = ?");
+            $stmt = $pdo->prepare("UPDATE cash_registers SET closing_time = NOW(), closing_cash_actual = ?, closing_cash_system = ?, cash_difference = ?, notes = ?, status = 'Closed' WHERE id = ? AND status = 'Open'");
             $stmt->execute([$actual_cash, $system_cash, $diff, $notes, $drawer_id]);
+            if ($stmt->rowCount() !== 1) {
+                throw new RuntimeException('This cash drawer is already closed or does not exist.');
+            }
             $msg = "Cash drawer reconciled and closed. Difference: $ " . number_format($diff, 2);
         } catch (Exception $e) {
-            $msg = "Error closing drawer: " . $e->getMessage();
+            $msg = "Error closing drawer: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -107,19 +131,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($expenses) && !$pdo) {
-    $expenses = [
-        ['id' => 1, 'category' => 'Rent', 'title' => 'Main Showroom Monthly Rent', 'amount' => 1200.00, 'payment_method' => 'Bank Transfer', 'expense_date' => date('Y-m-01'), 'notes' => 'Colombo central store lease'],
-        ['id' => 2, 'category' => 'Utilities', 'title' => 'Electricity & High-Speed Fiber Internet', 'amount' => 280.00, 'payment_method' => 'Card', 'expense_date' => date('Y-m-05'), 'notes' => 'CEB + SLT bill'],
-        ['id' => 3, 'category' => 'Supplies', 'title' => 'Soldering Flux, Thermal Paste, Isopropyl', 'amount' => 85.00, 'payment_method' => 'Cash', 'expense_date' => date('Y-m-10'), 'notes' => 'Workbench supplies']
-    ];
-    $total_revenue = 4320.00;
-    $cogs_total = 2100.00;
-    $gross_profit = 2220.00;
-    $total_expenses = 1565.00;
-    $net_profit = 655.00;
-    $total_tax = 140.00;
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -139,10 +150,12 @@ if (empty($expenses) && !$pdo) {
                 <i class="fa-solid fa-cash-register text-emerald-600"></i>
                 <span><?php echo $active_drawer ? 'Reconcile / Close Drawer' : 'Open Cash Drawer'; ?></span>
             </button>
+            <?php if ($can_record_expenses): ?>
             <button onclick="openExpenseModal()" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all shadow-sm shadow-emerald-500/25 flex items-center gap-2">
                 <i class="fa-solid fa-plus text-xs"></i>
                 <span>Record Expense</span>
             </button>
+            <?php endif; ?>
         </div>
     </div>
 

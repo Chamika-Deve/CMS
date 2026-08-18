@@ -1,14 +1,11 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/auth.php';
+enforce_page_access();
 require_once __DIR__ . '/lang.php';
-if (!isset($_SESSION['user'])) {
-    header("Location: ../index.php");
-    exit;
-}
+
 $user = $_SESSION['user'];
 $role = $user['role'] ?? 'Cashier';
+$database_available = isset($pdo) && $pdo instanceof PDO;
 
 // Maintenance Mode & Shop Lockdown Verification Middleware
 $is_maint_active = false;
@@ -280,8 +277,47 @@ if (empty($initials)) $initials = 'U';
                 }
             }
         }
-        window.APP_CURRENCY = '<?php echo addslashes($currency_symbol); ?>';
+        window.APP_CURRENCY = <?php echo json_encode($currency_symbol, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         window.CURRENCY_SYMBOL = window.APP_CURRENCY;
+        window.CSMS_CSRF_TOKEN = <?php echo json_encode(csrf_token()); ?>;
+
+        // Attach CSRF protection to all same-origin POST forms and fetch calls.
+        (() => {
+            const addTokenToForm = (form) => {
+                if ((form.method || 'get').toLowerCase() !== 'post') return;
+                let input = form.querySelector('input[name="_csrf_token"]');
+                if (!input) {
+                    input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = '_csrf_token';
+                    form.appendChild(input);
+                }
+                input.value = window.CSMS_CSRF_TOKEN;
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelectorAll('form').forEach(addTokenToForm);
+            });
+            document.addEventListener('submit', (event) => addTokenToForm(event.target), true);
+
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = (input, init = {}) => {
+                const requestUrl = typeof input === 'string' ? input : input.url;
+                const url = new URL(requestUrl, window.location.href);
+                const method = (init.method || (typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+
+                if (url.origin === window.location.origin && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+                    const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+                    headers.set('X-CSRF-Token', window.CSMS_CSRF_TOKEN);
+                    init = { ...init, headers };
+                    if (init.body instanceof FormData && !init.body.has('_csrf_token')) {
+                        init.body.append('_csrf_token', window.CSMS_CSRF_TOKEN);
+                    }
+                }
+
+                return originalFetch(input, init);
+            };
+        })();
     </script>
     <style>
         body {
@@ -624,6 +660,16 @@ if (empty($initials)) $initials = 'U';
 
     <!-- Main Content Wrapper -->
     <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#F7FAF8]">
+
+        <?php if (!$database_available): ?>
+        <div class="bg-red-600 text-white px-6 py-2.5 flex items-center justify-between shadow-md z-30 shrink-0 text-xs font-bold">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-database"></i>
+                <span>Database unavailable. Live data and write actions are disabled; no demo data is being shown.</span>
+            </div>
+            <a href="../logout.php" class="underline hover:text-red-100">Sign out</a>
+        </div>
+        <?php endif; ?>
 
         <?php if (isset($_SESSION['superadmin_impersonator'])): ?>
         <!-- Impersonation Alert Banner -->

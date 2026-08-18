@@ -4,47 +4,67 @@ require_once '../includes/header.php';
 
 $msg = '';
 $msg_type = 'success';
+$can_update_claims = in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory'], true);
 
 // Handle POST actions for Warranty Claims
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
+    if ($action === 'update_claim' && !in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory'], true)) {
+        abort_request(403, 'You do not have permission to update warranty claims.');
+    }
+
     if ($action === 'create_claim' && $pdo) {
         try {
-            $claim_no = 'RMA-' . date('ymd') . '-' . rand(100, 999);
+            $claim_no = 'RMA-' . date('ymd') . '-' . random_int(1000, 9999);
             $serial_no = trim($_POST['serial_number'] ?? '');
-            $customer_id = (int)$_POST['customer_id'];
+            $customer_id = (int)($_POST['customer_id'] ?? 0);
             $issue = trim($_POST['issue'] ?? '');
             $claim_type = $_POST['claim_type'] ?? 'In-House Repair';
+            $allowed_claim_types = ['In-House Repair', 'Supplier RMA', 'Replacement', 'Refund'];
 
-            // Find serial id
-            $stmt_s = $pdo->prepare("SELECT id FROM product_serials WHERE serial_number = ? LIMIT 1");
+            if ($serial_no === '' || $customer_id < 1 || $issue === '') {
+                throw new InvalidArgumentException('Serial number, customer, and issue are required.');
+            }
+            if (!in_array($claim_type, $allowed_claim_types, true)) {
+                throw new InvalidArgumentException('Invalid warranty claim type.');
+            }
+
+            // Warranty claims must reference a real inventory serial.
+            $stmt_s = $pdo->prepare('SELECT id FROM product_serials WHERE serial_number = ? LIMIT 1');
             $stmt_s->execute([$serial_no]);
-            $serial_id = $stmt_s->fetchColumn() ?: null;
+            $serial_id = $stmt_s->fetchColumn();
+            if (!$serial_id) {
+                throw new InvalidArgumentException('That serial number does not exist in inventory.');
+            }
 
             $stmt = $pdo->prepare("
-                INSERT INTO warranty_claims (claim_no, product_serial_id, customer_id, issue, claim_type, status, claim_date) 
-                VALUES (?, ?, ?, ?, ?, 'Pending', CURDATE())
+                INSERT INTO warranty_claims (claim_no, product_serial_id, customer_id, issue, claim_type, status, claim_date, created_by)
+                VALUES (?, ?, ?, ?, ?, 'Pending', CURDATE(), ?)
             ");
-            $stmt->execute([$claim_no, $serial_id, $customer_id, $issue, $claim_type]);
+            $stmt->execute([$claim_no, $serial_id, $customer_id, $issue, $claim_type, $user['id'] ?? null]);
             $msg = "Warranty Claim #$claim_no submitted successfully!";
         } catch (Exception $e) {
-            $msg = "Error creating claim: " . $e->getMessage();
+            $msg = "Error creating claim: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
 
     if ($action === 'update_claim' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
-            $status = $_POST['status'];
+            $id = (int)($_POST['id'] ?? 0);
+            $status = $_POST['status'] ?? '';
+            $allowed_statuses = ['Pending', 'Approved', 'In Supplier RMA', 'Repaired', 'Replaced', 'Refunded', 'Rejected'];
+            if ($id < 1 || !in_array($status, $allowed_statuses, true)) {
+                throw new InvalidArgumentException('Invalid warranty claim update.');
+            }
             $resolution = trim($_POST['resolution'] ?? '');
 
             $stmt = $pdo->prepare("UPDATE warranty_claims SET status = ?, resolution = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute([$status, $resolution, $id]);
             $msg = "Warranty claim status updated!";
         } catch (Exception $e) {
-            $msg = "Error updating claim: " . $e->getMessage();
+            $msg = "Error updating claim: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -99,37 +119,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($claims) && !$pdo) {
-    $claims = [
-        [
-            'id' => 1,
-            'claim_no' => 'RMA-260816-110',
-            'customer_name' => 'Alice Wonderland',
-            'customer_phone' => '555-1234',
-            'serial_number' => 'SN-DXPS15-001',
-            'product_name' => 'Dell XPS 15',
-            'issue' => 'Screen flickering horizontally under 60Hz load.',
-            'claim_type' => 'Supplier RMA',
-            'status' => 'In Supplier RMA',
-            'resolution' => 'Sent to Dell Authorized Service Center Colombo on Aug 14.',
-            'claim_date' => date('Y-m-d', strtotime('-2 days'))
-        ],
-        [
-            'id' => 2,
-            'claim_no' => 'RMA-260816-111',
-            'customer_name' => 'Michael Chang',
-            'customer_phone' => '555-9876',
-            'serial_number' => 'SN-ASVG248-001',
-            'product_name' => 'Asus VG248QE 24" Monitor',
-            'issue' => 'Dead pixels on top right quadrant.',
-            'claim_type' => 'Replacement',
-            'status' => 'Approved',
-            'resolution' => 'Direct replacement authorized from inventory.',
-            'claim_date' => date('Y-m-d', strtotime('-1 day'))
-        ]
-    ];
-    $stats = ['pending' => 1, 'rma' => 1, 'resolved' => 2];
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -312,9 +301,13 @@ if (empty($claims) && !$pdo) {
 
                         <!-- Actions -->
                         <td class="py-4 pl-4 pr-2 text-right">
+                            <?php if ($can_update_claims): ?>
                             <button onclick="openEditClaimModal(<?php echo htmlspecialchars(json_encode($cl)); ?>)" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-500 hover:text-white font-bold text-xs transition-colors">
                                 Update
                             </button>
+                            <?php else: ?>
+                            <span class="text-xs text-slate-400">View only</span>
+                            <?php endif; ?>
                         </td>
 
                     </tr>

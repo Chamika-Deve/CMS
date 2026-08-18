@@ -1,66 +1,12 @@
 <?php
 require_once '../includes/db.php';
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-if (!isset($_SESSION['user'])) {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-        exit;
-    }
-    header("Location: ../index.php");
-    exit;
-}
+require_once '../includes/auth.php';
+enforce_page_access('purchases.php');
 
 $user = $_SESSION['user'];
 $role = $user['role'] ?? 'Cashier';
 $msg = '';
 $msg_type = 'success';
-
-// Universal schema migration checks
-if ($pdo) {
-    $ensureCol = function($tbl, $col, $def) use ($pdo) {
-        try {
-            $chk = $pdo->query("SHOW COLUMNS FROM `$tbl` LIKE '$col'");
-            if (!$chk->fetch()) {
-                $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` $def");
-            }
-        } catch (Exception $e) {}
-    };
-
-    try {
-        $pdo->exec("ALTER TABLE `purchases` MODIFY COLUMN `status` varchar(50) NOT NULL DEFAULT 'Draft'");
-    } catch (Exception $e) {}
-
-    $ensureCol('suppliers', 'payment_terms', "varchar(50) NOT NULL DEFAULT 'Net 30'");
-    $ensureCol('suppliers', 'balance_due', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('purchases', 'expected_delivery_date', "date DEFAULT NULL");
-    $ensureCol('purchases', 'shipping_cost', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('purchases', 'tax_rate', "decimal(5,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('purchases', 'notes', "text DEFAULT NULL");
-    $ensureCol('purchase_items', 'received_quantity', "int NOT NULL DEFAULT 0");
-    $ensureCol('activity_logs', 'module', "varchar(100) DEFAULT NULL");
-    $ensureCol('activity_logs', 'details', "text DEFAULT NULL");
-
-    try {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS `purchase_returns` (
-                `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-                `return_no` varchar(50) NOT NULL UNIQUE,
-                `supplier_id` bigint unsigned NOT NULL,
-                `product_id` bigint unsigned NOT NULL,
-                `serial_number` varchar(100) DEFAULT NULL,
-                `quantity` int NOT NULL DEFAULT 1,
-                `refund_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
-                `reason` varchar(255) DEFAULT NULL,
-                `refund_type` varchar(50) NOT NULL DEFAULT 'Credit Note',
-                `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-    } catch (Exception $e) {}
-}
 
 // AJAX Handlers
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
@@ -81,8 +27,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     }
 
     if ($action === 'add_serial' && $pdo) {
-        $product_id = (int)$_POST['product_id'];
+        $product_id = (int)($_POST['product_id'] ?? 0);
         $serial = trim($_POST['serial_number'] ?? '');
+        if ($product_id < 1 || $serial === '' || strlen($serial) > 100) {
+            echo json_encode(['success' => false, 'message' => 'A valid product and serial number are required.']);
+            exit;
+        }
         try {
             $chk = $pdo->prepare("SELECT id FROM product_serials WHERE serial_number = ?");
             $chk->execute([$serial]);
@@ -94,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                 echo json_encode(['success' => true, 'message' => "Added '$serial'"]);
             }
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -125,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 
             echo json_encode(['success' => true, 'po' => $po, 'items' => $items]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -135,72 +85,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
+    if (in_array($action, ['approve_po', 'delete_po'], true)
+        && !in_array($role, ['Admin', 'Manager'], true)) {
+        abort_request(403, 'Only a manager or administrator may perform this purchase action.');
+    }
+
     // 1. Create Purchase Order
     if ($action === 'create_po' && $pdo) {
         try {
-            $po_number = 'PO-' . date('ymd') . '-' . rand(100, 999);
-            $supplier_id = (int)$_POST['supplier_id'];
+            $po_number = 'PO-' . date('ymd') . '-' . random_int(1000, 9999);
+            $supplier_id = (int)($_POST['supplier_id'] ?? 0);
             $purchase_date = !empty($_POST['purchase_date']) ? $_POST['purchase_date'] : date('Y-m-d');
             $expected_date = !empty($_POST['expected_delivery_date']) ? $_POST['expected_delivery_date'] : date('Y-m-d', strtotime('+7 days'));
-            $shipping_cost = (float)($_POST['shipping_cost'] ?? 0);
-            $tax_rate = (float)($_POST['tax_rate'] ?? 0);
+            $shipping_cost = max(0, (float)($_POST['shipping_cost'] ?? 0));
+            $tax_rate = max(0, min(100, (float)($_POST['tax_rate'] ?? 0)));
             $notes = trim($_POST['notes'] ?? '');
             $items = json_decode($_POST['items_json'] ?? '[]', true);
 
-            if (empty($items)) {
-                throw new Exception("Please add at least one product line item to the purchase order.");
+            if ($supplier_id < 1 || !is_array($items) || $items === []) {
+                throw new InvalidArgumentException('Select a supplier and add at least one product line.');
             }
-
-            $subtotal = 0;
-            foreach ($items as $it) {
-                $subtotal += (int)($it['qty'] ?? 1) * (float)($it['cost'] ?? 0);
-            }
-            $tax_amount = ($subtotal * $tax_rate) / 100;
-            $total_amount = $subtotal + $tax_amount + $shipping_cost;
-
-            // Approval threshold: Over $1,000 requires Manager/Admin approval
-            $status = ($total_amount > 1000 && !in_array($role, ['Admin', 'Manager'])) ? 'Submitted' : 'Approved';
-
-            try {
-                $stmt = $pdo->prepare("
-                    INSERT INTO purchases (supplier_id, invoice_no, purchase_date, total_amount, status, expected_delivery_date, shipping_cost, tax_rate, notes, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $stmt->execute([$supplier_id, $po_number, $purchase_date, $total_amount, $status, $expected_date, $shipping_cost, $tax_rate, $notes]);
-            } catch (Exception $ex1) {
-                $stmt = $pdo->prepare("
-                    INSERT INTO purchases (supplier_id, invoice_no, purchase_date, total_amount, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, NOW())
-                ");
-                try {
-                    $stmt->execute([$supplier_id, $po_number, $purchase_date, $total_amount, $status]);
-                } catch (Exception $ex2) {
-                    $stmt->execute([$supplier_id, $po_number, $purchase_date, $total_amount, 'Pending']);
+            foreach ([$purchase_date, $expected_date] as $dateValue) {
+                $date = DateTimeImmutable::createFromFormat('!Y-m-d', $dateValue);
+                if (!$date || $date->format('Y-m-d') !== $dateValue) {
+                    throw new InvalidArgumentException('Purchase and delivery dates must be valid dates.');
                 }
             }
-            
-            $purchase_id = $pdo->lastInsertId();
 
-            // Insert PO items
-            $stmt_item = $pdo->prepare("INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_cost, received_quantity) VALUES (?, ?, ?, ?, 0)");
-            foreach ($items as $it) {
-                $stmt_item->execute([$purchase_id, (int)$it['product_id'], (int)($it['qty'] ?? 1), (float)($it['cost'] ?? 0)]);
+            $supplierCheck = $pdo->prepare('SELECT id FROM suppliers WHERE id = ?');
+            $supplierCheck->execute([$supplier_id]);
+            if (!$supplierCheck->fetchColumn()) {
+                throw new InvalidArgumentException('The selected supplier no longer exists.');
             }
 
-            // Activity log
-            try {
-                $stmt_log = $pdo->prepare("INSERT INTO activity_logs (user_id, action, module, table_name, record_id, details) VALUES (?, 'Create PO', 'Purchasing', 'purchases', ?, ?)");
-                $stmt_log->execute([$user['id'] ?? 1, $purchase_id, "Created $po_number for Total: " . htmlspecialchars($currency_symbol) . " " . number_format($total_amount, 2)]);
-            } catch (Exception $e_log) {
-                try {
-                    $stmt_log2 = $pdo->prepare("INSERT INTO activity_logs (user_id, action, table_name, record_id) VALUES (?, ?, 'purchases', ?)");
-                    $stmt_log2->execute([$user['id'] ?? 1, "Create PO $po_number (" . htmlspecialchars($currency_symbol) . " " . number_format($total_amount, 2) . ")", $purchase_id]);
-                } catch (Exception $e_log2) {}
+            $normalizedItems = [];
+            $subtotal = 0.0;
+            $productCheck = $pdo->prepare('SELECT id FROM products WHERE id = ?');
+            foreach ($items as $item) {
+                $productId = (int)($item['product_id'] ?? 0);
+                $quantity = (int)($item['qty'] ?? 0);
+                $unitCost = (float)($item['cost'] ?? -1);
+                if ($productId < 1 || $quantity < 1 || $unitCost < 0) {
+                    throw new InvalidArgumentException('Every PO line needs a valid product, quantity, and cost.');
+                }
+                $productCheck->execute([$productId]);
+                if (!$productCheck->fetchColumn()) {
+                    throw new InvalidArgumentException('A selected PO product no longer exists.');
+                }
+                $normalizedItems[] = [$productId, $quantity, $unitCost];
+                $subtotal += $quantity * $unitCost;
             }
+
+            $tax_amount = round($subtotal * ($tax_rate / 100), 2);
+            $total_amount = round($subtotal + $tax_amount + $shipping_cost, 2);
+            $status = ($total_amount > 1000 && !in_array($role, ['Admin', 'Manager'], true))
+                ? 'Submitted'
+                : 'Approved';
+
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                INSERT INTO purchases (supplier_id, invoice_no, purchase_date, total_amount, status, expected_delivery_date, shipping_cost, tax_rate, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([$supplier_id, $po_number, $purchase_date, $total_amount, $status, $expected_date, $shipping_cost, $tax_rate, $notes]);
+            $purchase_id = (int)$pdo->lastInsertId();
+
+            $itemStatement = $pdo->prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_cost, received_quantity) VALUES (?, ?, ?, ?, 0)');
+            foreach ($normalizedItems as [$productId, $quantity, $unitCost]) {
+                $itemStatement->execute([$purchase_id, $productId, $quantity, $unitCost]);
+            }
+
+            $logStatement = $pdo->prepare("INSERT INTO activity_logs (user_id, action, module, table_name, record_id, details) VALUES (?, 'Create PO', 'Purchasing', 'purchases', ?, ?)");
+            $logStatement->execute([$user['id'] ?? null, $purchase_id, "Created {$po_number}; total {$total_amount}"]);
+            $pdo->commit();
 
             $msg = "Purchase Order #$po_number created successfully! Status: $status";
-        } catch (Exception $e) {
-            $msg = "Error creating PO: " . $e->getMessage();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $msg = 'Error creating PO: ' . safe_error_message($exception);
             $msg_type = 'error';
         }
     }
@@ -208,17 +172,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 2. Approve or Reject PO (Manager/Admin)
     if ($action === 'approve_po' && $pdo && in_array($role, ['Admin', 'Manager'])) {
         try {
-            $po_id = (int)$_POST['po_id'];
-            $decision = $_POST['decision'] ?? 'Approved';
-            $stmt = $pdo->prepare("UPDATE purchases SET status = ?, updated_at = NOW() WHERE id = ?");
-            try {
-                $stmt->execute([$decision, $po_id]);
-            } catch (Exception $ex) {
-                $stmt->execute(['Completed', $po_id]);
+            $po_id = (int)($_POST['po_id'] ?? 0);
+            $decision = $_POST['decision'] ?? '';
+            if ($po_id < 1 || !in_array($decision, ['Approved', 'Rejected'], true)) {
+                throw new InvalidArgumentException('Invalid purchase approval decision.');
+            }
+            $stmt = $pdo->prepare("UPDATE purchases SET status = ?, updated_at = NOW() WHERE id = ? AND status IN ('Draft', 'Submitted', 'Pending')");
+            $stmt->execute([$decision, $po_id]);
+            if ($stmt->rowCount() !== 1) {
+                throw new RuntimeException('This purchase order is not awaiting approval.');
             }
             $msg = "Purchase Order #$po_id status updated to $decision.";
         } catch (Exception $e) {
-            $msg = "Error: " . $e->getMessage();
+            $msg = "Error: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -226,17 +192,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 3. Mark PO Sent to Supplier
     if ($action === 'send_po' && $pdo) {
         try {
-            $po_id = (int)$_POST['po_id'];
-            $stmt = $pdo->prepare("UPDATE purchases SET status = 'Sent to Supplier', updated_at = NOW() WHERE id = ?");
-            try {
-                $stmt->execute([$po_id]);
-            } catch (Exception $ex) {
-                $stmt = $pdo->prepare("UPDATE purchases SET status = 'Pending', updated_at = NOW() WHERE id = ?");
-                $stmt->execute([$po_id]);
+            $po_id = (int)($_POST['po_id'] ?? 0);
+            $stmt = $pdo->prepare("UPDATE purchases SET status = 'Sent to Supplier', updated_at = NOW() WHERE id = ? AND status = 'Approved'");
+            $stmt->execute([$po_id]);
+            if ($stmt->rowCount() !== 1) {
+                throw new RuntimeException('Only an approved purchase order can be sent.');
             }
             $msg = "Purchase Order #$po_id marked as Sent to Supplier (Locked).";
         } catch (Exception $e) {
-            $msg = "Error: " . $e->getMessage();
+            $msg = "Error: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -244,18 +208,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 4. Delete / Cancel PO
     if ($action === 'delete_po' && $pdo && in_array($role, ['Admin', 'Manager'])) {
         try {
-            $po_id = (int)$_POST['po_id'];
-            $chk = $pdo->prepare("SELECT status FROM purchases WHERE id = ?");
+            $po_id = (int)($_POST['po_id'] ?? 0);
+            $pdo->beginTransaction();
+            $chk = $pdo->prepare('SELECT status FROM purchases WHERE id = ? FOR UPDATE');
             $chk->execute([$po_id]);
             $curr_st = $chk->fetchColumn();
-            if (in_array($curr_st, ['Received', 'Partially Received'])) {
-                throw new Exception("Cannot delete a PO that has already received stock.");
+            if (!$curr_st) {
+                throw new RuntimeException('Purchase order not found.');
             }
-            $pdo->prepare("DELETE FROM purchase_items WHERE purchase_id = ?")->execute([$po_id]);
-            $pdo->prepare("DELETE FROM purchases WHERE id = ?")->execute([$po_id]);
+            if (in_array($curr_st, ['Received', 'Partially Received'], true)) {
+                throw new RuntimeException('Cannot delete a PO that has already received stock.');
+            }
+            $pdo->prepare('DELETE FROM purchase_items WHERE purchase_id = ?')->execute([$po_id]);
+            $pdo->prepare('DELETE FROM purchases WHERE id = ?')->execute([$po_id]);
+            $pdo->commit();
             $msg = "Purchase Order #$po_id deleted successfully.";
-        } catch (Exception $e) {
-            $msg = "Error deleting PO: " . $e->getMessage();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $msg = "Error deleting PO: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -279,11 +249,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception("Received quantity must be at least 1.");
             }
 
-            // Verify product in PO and calculate remaining quantity
+            $pdo->beginTransaction();
+
+            // Lock the PO line so concurrent GRNs cannot over-receive it.
             $stmt_item_chk = $pdo->prepare("
-                SELECT id, quantity, COALESCE(received_quantity, 0) as received_qty, unit_cost 
-                FROM purchase_items 
+                SELECT id, quantity, COALESCE(received_quantity, 0) as received_qty, unit_cost
+                FROM purchase_items
                 WHERE purchase_id = ? AND product_id = ?
+                FOR UPDATE
             ");
             $stmt_item_chk->execute([$po_id, $product_id]);
             $po_item = $stmt_item_chk->fetch(PDO::FETCH_ASSOC);
@@ -310,6 +283,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 if (count($serials) !== $received_qty) {
                     throw new Exception("Quantity Mismatch: You specified $received_qty unit(s) to receive, but provided " . count($serials) . " serial number(s). Please provide exactly $received_qty unique serial numbers (one per line).");
+                }
+
+                foreach ($serials as $serial) {
+                    if ($serial === '' || strlen($serial) > 100) {
+                        throw new InvalidArgumentException('Each serial number must contain 1–100 characters.');
+                    }
                 }
 
                 // Check for duplicates inside entered list
@@ -340,7 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 // Bulk non-serialized items (e.g., thermal paste, cables, screws)
                 $stmt_sn = $pdo->prepare("INSERT INTO product_serials (product_id, serial_number, purchase_id, status) VALUES (?, ?, ?, 'in_stock')");
                 for ($i = 0; $i < $received_qty; $i++) {
-                    $auto_sn = 'BATCH-' . date('ymd') . '-' . $po_id . '-' . rand(10000, 99999);
+                    $auto_sn = 'BATCH-' . date('ymd') . '-' . $po_id . '-' . $i . '-' . bin2hex(random_bytes(3));
                     $stmt_sn->execute([$product_id, $auto_sn, $po_id]);
                 }
             }
@@ -371,9 +350,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt_supp->execute([$received_cost, $supp_id]);
             }
 
+            $pdo->commit();
             $msg = "GRN Confirmed: $received_qty unit(s) added to active stock! Total PO Fulfillment: $tot_rec / $tot_ord units ($new_st).";
-        } catch (Exception $e) {
-            $msg = "Error receiving goods: " . $e->getMessage();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $msg = "Error receiving goods: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -381,43 +362,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 6. Record Purchase Return
     if ($action === 'create_return' && $pdo) {
         try {
-            $return_no = 'PR-' . date('ymd') . '-' . rand(100, 999);
-            $po_id = !empty($_POST['po_id']) ? (int)$_POST['po_id'] : null;
-            $supplier_id = (int)$_POST['supplier_id'];
-            $product_id = (int)$_POST['product_id'];
+            $return_no = 'PR-' . date('ymd') . '-' . random_int(1000, 9999);
+            $supplier_id = (int)($_POST['supplier_id'] ?? 0);
+            $product_id = (int)($_POST['product_id'] ?? 0);
             $serial_no = trim($_POST['serial_number'] ?? '');
             $qty = (int)($_POST['quantity'] ?? 1);
-            $refund_amount = (float)($_POST['refund_amount'] ?? 0);
+            $refund_amount = max(0, (float)($_POST['refund_amount'] ?? 0));
             $reason = trim($_POST['reason'] ?? 'Defective on arrival');
             $refund_type = $_POST['refund_type'] ?? 'Credit Note';
+            $allowed_refund_types = ['Credit Note', 'Cash Refund', 'Replacement'];
 
-            // Insert into purchase_returns
-            try {
-                $stmt_ret = $pdo->prepare("
-                    INSERT INTO purchase_returns (return_no, supplier_id, product_id, serial_number, quantity, refund_amount, reason, refund_type, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                ");
-                $stmt_ret->execute([$return_no, $supplier_id, $product_id, $serial_no, $qty, $refund_amount, $reason, $refund_type]);
-            } catch (Exception $e_ret) {}
-
-            // If serial specified, mark serial defective / returned
-            if (!empty($serial_no)) {
-                $stmt_ds = $pdo->prepare("UPDATE product_serials SET status = 'returned' WHERE serial_number = ?");
-                $stmt_ds->execute([$serial_no]);
+            if ($supplier_id < 1 || $product_id < 1 || $qty < 1 || $reason === '') {
+                throw new InvalidArgumentException('Supplier, product, quantity, and return reason are required.');
+            }
+            if (!in_array($refund_type, $allowed_refund_types, true)) {
+                throw new InvalidArgumentException('Invalid purchase return type.');
+            }
+            if ($serial_no !== '' && $qty !== 1) {
+                throw new InvalidArgumentException('A return for one specific serial must have quantity 1.');
             }
 
-            // Deduct from supplier balance due
+            $pdo->beginTransaction();
+            $supplierCheck = $pdo->prepare('SELECT id FROM suppliers WHERE id = ? FOR UPDATE');
+            $supplierCheck->execute([$supplier_id]);
+            if (!$supplierCheck->fetchColumn()) {
+                throw new RuntimeException('The selected supplier does not exist.');
+            }
+
+            $serialIds = [];
+            if ($serial_no !== '') {
+                $serialStatement = $pdo->prepare("SELECT id FROM product_serials WHERE product_id = ? AND serial_number = ? AND status = 'in_stock' FOR UPDATE");
+                $serialStatement->execute([$product_id, $serial_no]);
+                $serialId = $serialStatement->fetchColumn();
+                if (!$serialId) {
+                    throw new RuntimeException('That serial is not an in-stock unit of the selected product.');
+                }
+                $serialIds[] = (int)$serialId;
+            } else {
+                $serialStatement = $pdo->prepare("SELECT id FROM product_serials WHERE product_id = ? AND status = 'in_stock' ORDER BY id LIMIT {$qty} FOR UPDATE");
+                $serialStatement->execute([$product_id]);
+                $serialIds = array_map('intval', $serialStatement->fetchAll(PDO::FETCH_COLUMN));
+                if (count($serialIds) !== $qty) {
+                    throw new RuntimeException('There are not enough in-stock units to process this return.');
+                }
+            }
+
+            $returnStatement = $pdo->prepare("
+                INSERT INTO purchase_returns (return_no, supplier_id, product_id, serial_number, quantity, refund_amount, reason, refund_type, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ");
+            $returnStatement->execute([$return_no, $supplier_id, $product_id, $serial_no ?: null, $qty, $refund_amount, $reason, $refund_type]);
+
+            $placeholders = implode(',', array_fill(0, count($serialIds), '?'));
+            $serialUpdate = $pdo->prepare("UPDATE product_serials SET status = 'returned', notes = ? WHERE id IN ({$placeholders})");
+            $serialUpdate->execute(array_merge(['Purchase return ' . $return_no . ': ' . $reason], $serialIds));
+
             if ($refund_amount > 0) {
-                $stmt_sp = $pdo->prepare("UPDATE suppliers SET balance_due = GREATEST(0, balance_due - ?) WHERE id = ?");
-                $stmt_sp->execute([$refund_amount, $supplier_id]);
+                $supplierStatement = $pdo->prepare('UPDATE suppliers SET balance_due = GREATEST(0, balance_due - ?) WHERE id = ?');
+                $supplierStatement->execute([$refund_amount, $supplier_id]);
             }
 
-            $msg = "Purchase Return #$return_no processed ($refund_type: $ " . number_format($refund_amount, 2) . ")!";
-        } catch (Exception $e) {
-            $msg = "Error creating return: " . $e->getMessage();
+            $pdo->commit();
+            $msg = "Purchase Return #$return_no processed ($refund_type: " . number_format($refund_amount, 2) . ')!';
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $msg = 'Error creating return: ' . safe_error_message($exception);
             $msg_type = 'error';
         }
     }
+
 }
 
 require_once '../includes/header.php';
@@ -480,37 +493,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($purchase_orders) && !$pdo) {
-    $purchase_orders = [
-        [
-            'id' => 1,
-            'invoice_no' => 'PO-260816-001',
-            'supplier_name' => 'Tech Distro Inc.',
-            'supp_terms' => 'Net 30',
-            'purchase_date' => date('Y-m-d', strtotime('-3 days')),
-            'total_amount' => 1400.00,
-            'status' => 'Sent to Supplier',
-            'line_items_count' => 2,
-            'total_ordered_units' => 10,
-            'total_received_units' => 4
-        ],
-        [
-            'id' => 2,
-            'invoice_no' => 'PO-260816-002',
-            'supplier_name' => 'Global Hardware Direct',
-            'supp_terms' => 'Net 15',
-            'purchase_date' => date('Y-m-d', strtotime('-1 day')),
-            'total_amount' => 2850.00,
-            'status' => 'Partially Received',
-            'line_items_count' => 4,
-            'total_ordered_units' => 15,
-            'total_received_units' => 10
-        ]
-    ];
-    $total_po_count = 2;
-    $pending_po_count = 2;
-    $total_ap_due = 3300.00;
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -767,7 +749,7 @@ if (empty($purchase_orders) && !$pdo) {
                             $is_sel = ($selected_po_id === $po_id_num) ? 'selected' : '';
                         ?>
                             <option value="<?php echo $po_id_num; ?>" <?php echo $is_sel; ?>>
-                                <?php echo htmlspecialchars($po_disp_num . ' - ' . $po_disp_supp . ' ($ ' . number_format($po_disp_amt, 2) . ') [' . $po_disp_st . ']'); ?>
+                                <?php echo htmlspecialchars($po_disp_num . ' - ' . $po_disp_supp . ' (' . $currency_symbol . ' ' . number_format($po_disp_amt, 2) . ') [' . $po_disp_st . ']'); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
