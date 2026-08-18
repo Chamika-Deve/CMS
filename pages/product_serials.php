@@ -1,5 +1,7 @@
 <?php
 require_once '../includes/db.php';
+require_once '../includes/auth.php';
+enforce_page_access('product_serials.php');
 
 $product_id = $_GET['id'] ?? 0;
 $product = null;
@@ -45,8 +47,8 @@ if ($pdo && $product_id) {
                 $serial_number = trim($_POST['serial_number']);
                 $response = ['success' => false, 'message' => ''];
                 
-                if (empty($serial_number)) {
-                    $response['message'] = 'Serial number cannot be empty.';
+                if ($serial_number === '' || strlen($serial_number) > 100) {
+                    $response['message'] = 'Serial number must contain 1–100 characters.';
                 } else {
                     try {
                         // Check if serial already exists
@@ -63,7 +65,7 @@ if ($pdo && $product_id) {
                             $response['new_id'] = $pdo->lastInsertId();
                         }
                     } catch (\PDOException $e) {
-                        $response['message'] = 'Database Error: ' . $e->getMessage();
+                        $response['message'] = 'Database Error: ' . safe_error_message($e);
                     }
                 }
                 echo json_encode($response);
@@ -75,9 +77,12 @@ if ($pdo && $product_id) {
                 $serial_id = (int)$_POST['serial_id'];
                 $response = ['success' => false, 'message' => ''];
                 try {
-                    $stmt = $pdo->prepare("DELETE FROM product_serials WHERE id = ?");
-                    $stmt->execute([$serial_id]);
-                    $response['success'] = true;
+                    $stmt = $pdo->prepare("DELETE FROM product_serials WHERE id = ? AND product_id = ? AND status = 'in_stock'");
+                    $stmt->execute([$serial_id, $product_id]);
+                    $response['success'] = $stmt->rowCount() === 1;
+                    if (!$response['success']) {
+                        $response['message'] = 'Only an in-stock serial belonging to this product can be deleted.';
+                    }
                 } catch (\PDOException $e) {
                     $response['message'] = 'Cannot delete. It may be linked to a sale.';
                 }

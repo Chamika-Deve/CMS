@@ -1,84 +1,26 @@
 <?php
 require_once '../includes/db.php';
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-if (!isset($_SESSION['user'])) {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-        exit;
-    }
-    header("Location: ../index.php");
-    exit;
-}
+require_once '../includes/auth.php';
+enforce_page_access('products.php');
 
 $user = $_SESSION['user'];
 $role = $user['role'] ?? 'Cashier';
 $user_id = $user['id'] ?? 1;
+$can_manage_inventory = in_array($role, ['Admin', 'Manager', 'Inventory'], true);
+
+// Product browsing is available to several roles, but stock/catalog changes
+// are restricted to staff responsible for inventory.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    $requested_action = $_POST['action'] ?? '';
+    $read_only_actions = ['lookup_product', 'get_categories', 'get_product_serials'];
+    if (!in_array($requested_action, $read_only_actions, true)
+        && !$can_manage_inventory) {
+        abort_request(403, 'You do not have permission to change inventory.', isset($_POST['ajax']));
+    }
+}
 
 $msg = '';
 $msg_type = 'success';
-
-// Universal schema migration checks
-if ($pdo) {
-    $ensureCol = function($tbl, $col, $def) use ($pdo) {
-        try {
-            $chk = $pdo->query("SHOW COLUMNS FROM `$tbl` LIKE '$col'");
-            if (!$chk->fetch()) {
-                $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` $def");
-            }
-        } catch (Exception $e) {}
-    };
-
-    $ensureCol('products', 'sub_category', "varchar(100) DEFAULT NULL");
-    $ensureCol('products', 'model_number', "varchar(100) DEFAULT NULL");
-    $ensureCol('products', 'specifications', "text DEFAULT NULL");
-    $ensureCol('products', 'description', "text DEFAULT NULL");
-    $ensureCol('products', 'unit_of_measure', "varchar(50) NOT NULL DEFAULT 'pcs'");
-    $ensureCol('products', 'cost_price', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('products', 'wholesale_price', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('products', 'tax_rate', "decimal(5,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('products', 'reorder_level', "int NOT NULL DEFAULT 5");
-    $ensureCol('products', 'location', "varchar(100) DEFAULT 'Main Shelf'");
-    $ensureCol('products', 'is_bundle', "tinyint(1) NOT NULL DEFAULT 0");
-    $ensureCol('products', 'status', "varchar(50) NOT NULL DEFAULT 'Active'");
-
-    $ensureCol('product_serials', 'sale_id', "bigint unsigned DEFAULT NULL");
-    $ensureCol('product_serials', 'notes', "text DEFAULT NULL");
-
-    try {
-        $pdo->exec("ALTER TABLE `product_serials` MODIFY COLUMN `status` varchar(50) NOT NULL DEFAULT 'in_stock'");
-    } catch (Exception $e) {}
-
-    try {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS `stock_movements` (
-                `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-                `product_id` bigint unsigned NOT NULL,
-                `serial_number` varchar(100) DEFAULT NULL,
-                `movement_type` varchar(50) NOT NULL,
-                `quantity` int NOT NULL DEFAULT 1,
-                `reason` varchar(255) DEFAULT NULL,
-                `reference_id` varchar(100) DEFAULT NULL,
-                `user_id` bigint unsigned DEFAULT NULL,
-                `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `product_id` (`product_id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS `product_bundles` (
-                `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-                `bundle_product_id` bigint unsigned NOT NULL,
-                `component_product_id` bigint unsigned NOT NULL,
-                `quantity` int NOT NULL DEFAULT 1,
-                PRIMARY KEY (`id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-    } catch (Exception $e) {}
-}
 
 // Helper to log stock movements
 $logStockMovement = function($productId, $type, $qty, $reason, $ref = null, $serial = null) use ($pdo, $user_id) {
@@ -114,8 +56,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
 
     // 2. Add Serial Number to Stock
     if ($action === 'add_serial' && $pdo) {
-        $product_id = (int)$_POST['product_id'];
+        $product_id = (int)($_POST['product_id'] ?? 0);
         $serial = trim($_POST['serial_number'] ?? '');
+        if ($product_id < 1 || $serial === '' || strlen($serial) > 100) {
+            echo json_encode(['success' => false, 'message' => 'A valid product and serial number are required.']);
+            exit;
+        }
         try {
             $chk = $pdo->prepare("SELECT id, status FROM product_serials WHERE serial_number = ?");
             $chk->execute([$serial]);
@@ -130,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                 echo json_encode(['success' => true, 'message' => "Added '$serial'"]);
             }
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -148,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             $cats = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode(['success' => true, 'categories' => $cats]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -172,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             $new_id = $pdo->lastInsertId();
             echo json_encode(['success' => true, 'message' => "Category '$cat_name' added successfully!", 'category' => ['id' => (int)$new_id, 'name' => $cat_name]]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -192,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             $del->execute([$cat_id]);
             echo json_encode(['success' => true, 'message' => 'Category deleted successfully!']);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -212,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             $serials = $stmt->fetchAll(PDO::FETCH_ASSOC);
             echo json_encode(['success' => true, 'serials' => $serials]);
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -239,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                 echo json_encode(['success' => false, 'message' => 'Serial record not found.']);
             }
         } catch (Exception $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
         }
         exit;
     }
@@ -271,8 +217,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $specs = trim($_POST['specifications'] ?? '');
             $desc = trim($_POST['description'] ?? '');
 
-            if (empty($name)) {
-                throw new Exception("Product name is required.");
+            if ($name === '' || !$cat_id) {
+                throw new InvalidArgumentException('Product name and category are required.');
+            }
+            if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0) {
+                throw new InvalidArgumentException('Product prices cannot be negative.');
+            }
+            if ($tax_rate < 0 || $tax_rate > 100 || $reorder_level < 0) {
+                throw new InvalidArgumentException('Tax must be 0–100 and reorder level cannot be negative.');
+            }
+            if (!in_array($status, ['Active', 'Discontinued'], true)) {
+                throw new InvalidArgumentException('Invalid product status.');
             }
 
             if (empty($code)) {
@@ -328,7 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $msg = "Product '$name' ($code) created successfully!";
             }
         } catch (Exception $e) {
-            $msg = "Error saving product: " . $e->getMessage();
+            $msg = "Error saving product: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -365,7 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $msg = "Stock Adjustment: -$qty unit(s) deducted / written off successfully!";
             }
         } catch (Exception $e) {
-            $msg = "Error performing adjustment: " . $e->getMessage();
+            $msg = "Error performing adjustment: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -406,7 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $msg = "Stock Take reconciliation complete! Adjusted $reconciled_count product variance(s).";
         } catch (Exception $e) {
-            $msg = "Error reconciling stock take: " . $e->getMessage();
+            $msg = "Error reconciling stock take: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -429,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $msg = "Product deleted successfully from catalog.";
             }
         } catch (Exception $e) {
-            $msg = "Error: " . $e->getMessage();
+            $msg = "Error: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -439,6 +394,9 @@ require_once '../includes/header.php';
 
 // Active Tab
 $tab = $_GET['tab'] ?? 'catalog';
+if (!$can_manage_inventory && in_array($tab, ['stocktake', 'scan'], true)) {
+    $tab = 'catalog';
+}
 $filter_cat = $_GET['category'] ?? '';
 $filter_brand = $_GET['brand'] ?? '';
 $filter_status = $_GET['status'] ?? '';
@@ -561,6 +519,7 @@ if ($pdo) {
             <p class="text-xs sm:text-sm text-slate-500 mt-1">Product catalog, serial/IMEI lifecycle, stock movements, stock take & valuation.</p>
         </div>
         
+        <?php if ($can_manage_inventory): ?>
         <div class="flex items-center gap-2.5 flex-wrap">
             <button onclick="openCategoryModal()" class="px-4 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold transition-all flex items-center gap-2">
                 <i class="fa-solid fa-folder-plus text-slate-500"></i>
@@ -577,6 +536,7 @@ if ($pdo) {
                 <span>Add New Product</span>
             </button>
         </div>
+        <?php endif; ?>
     </div>
 
     <?php if ($msg): ?>
@@ -599,12 +559,14 @@ if ($pdo) {
         <a href="products.php?tab=movements" class="px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap <?php echo $tab === 'movements' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20' : 'text-slate-600 hover:bg-slate-100'; ?>">
             <i class="fa-solid fa-arrow-right-arrow-left mr-1.5"></i> Stock Movements
         </a>
+        <?php if ($can_manage_inventory): ?>
         <a href="products.php?tab=stocktake" class="px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap <?php echo $tab === 'stocktake' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20' : 'text-slate-600 hover:bg-slate-100'; ?>">
             <i class="fa-solid fa-clipboard-check mr-1.5"></i> Stock Take (Reconciliation)
         </a>
         <a href="products.php?tab=scan" class="px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap <?php echo $tab === 'scan' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20' : 'text-slate-600 hover:bg-slate-100'; ?>">
             <i class="fa-solid fa-bolt mr-1.5"></i> Rapid Barcode Inbound
         </a>
+        <?php endif; ?>
     </div>
 
     <!-- Inventory KPI Summary Row -->
@@ -828,6 +790,7 @@ if ($pdo) {
                                         <i class="fa-solid fa-fingerprint"></i>
                                     </button>
 
+                                    <?php if ($can_manage_inventory): ?>
                                     <!-- Edit Product -->
                                     <button onclick="editProduct(<?php echo htmlspecialchars(json_encode($pr)); ?>)" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-colors text-xs" title="Edit Product">
                                         <i class="fa-solid fa-pen-to-square"></i>
@@ -841,6 +804,7 @@ if ($pdo) {
                                             <i class="fa-solid fa-trash"></i>
                                         </button>
                                     </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
 
@@ -923,9 +887,13 @@ if ($pdo) {
                                 <?php echo !empty($sn['created_at']) ? date('M j, Y H:i', strtotime($sn['created_at'])) : 'N/A'; ?>
                             </td>
                             <td class="py-3.5 pl-4 pr-2 text-right">
+                                <?php if ($can_manage_inventory): ?>
                                 <button onclick="openSerialEditModal(<?php echo $sn['id']; ?>, '<?php echo addslashes($sn['serial_number']); ?>', '<?php echo $sn_st; ?>', '<?php echo addslashes($sn['notes'] ?? ''); ?>')" class="px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold">
                                     Change Status
                                 </button>
+                                <?php else: ?>
+                                <span class="text-xs text-slate-400">View only</span>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -1788,6 +1756,11 @@ function filterSerialsTable() {
     rows.forEach(r => {
         r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
+}
+</script>
+
+<?php require_once '../includes/footer.php'; ?>
+);
 }
 </script>
 

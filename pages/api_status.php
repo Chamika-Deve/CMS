@@ -1,10 +1,8 @@
 <?php
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../includes/db.php';
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/../includes/auth.php';
+enforce_page_access('api_status.php');
 
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? 'Guest';
@@ -39,8 +37,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         'feature_accounting', 'feature_tracker', 'app_debug'
     ];
 
-    if (!in_array($key, $allowed_keys)) {
+    if (!in_array($key, $allowed_keys, true)) {
+        http_response_code(422);
         echo json_encode(['success' => false, 'error' => 'Invalid setting key.']);
+        exit;
+    }
+
+    $message_keys = ['maintenance_message', 'shop_disabled_message'];
+    if (in_array($key, $message_keys, true)) {
+        $value = function_exists('mb_substr') ? mb_substr($value, 0, 1000) : substr($value, 0, 1000);
+    } elseif (!in_array($value, ['0', '1'], true)) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'error' => 'Toggle values must be 0 or 1.']);
         exit;
     }
 
@@ -62,8 +70,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 'message' => "Setting $key updated instantly."
             ]);
             exit;
-        } catch (Exception $e) {
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            error_log('Live setting update failed: ' . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'The setting could not be updated.']);
             exit;
         }
     } else {

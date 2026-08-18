@@ -5,13 +5,18 @@ require_once '../includes/header.php';
 // Handle POST actions for repairs
 $msg = '';
 $msg_type = 'success';
+$can_update_repairs = in_array($role, ['Admin', 'Manager', 'Technician'], true);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
+    if ($action === 'update_status' && !in_array($role, ['Admin', 'Manager', 'Technician'], true)) {
+        abort_request(403, 'You do not have permission to update repair jobs.');
+    }
+
     if ($action === 'create_ticket' && $pdo) {
         try {
-            $ticket_no = 'RPR-' . date('ymd') . '-' . rand(100, 999);
+            $ticket_no = 'RPR-' . date('ymd') . '-' . strtoupper(bin2hex(random_bytes(4)));
             $customer_id = (int)$_POST['customer_id'];
             $device_type = trim($_POST['device_type'] ?? 'Laptop');
             $device_brand = trim($_POST['device_brand'] ?? '');
@@ -21,8 +26,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $issue_description = trim($_POST['issue_description'] ?? '');
             $accessories_included = trim($_POST['accessories_included'] ?? '');
             $technician_id = !empty($_POST['technician_id']) ? (int)$_POST['technician_id'] : null;
-            $estimated_cost = (float)($_POST['estimated_cost'] ?? 0);
-            $public_token = bin2hex(random_bytes(16));
+            $estimated_cost = max(0, (float)($_POST['estimated_cost'] ?? 0));
+            $public_token = bin2hex(random_bytes(32));
+
+            if ($customer_id < 1 || $device_type === '' || $issue_description === '') {
+                throw new InvalidArgumentException('Customer, device type, and issue description are required.');
+            }
 
             $stmt = $pdo->prepare("
                 INSERT INTO repair_jobs (
@@ -45,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Repair Ticket #$ticket_no created successfully!";
         } catch (Exception $e) {
-            $msg = "Error creating ticket: " . $e->getMessage();
+            $msg = "Error creating ticket: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -53,15 +62,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'update_status' && $pdo) {
         try {
             $job_id = (int)$_POST['job_id'];
-            $new_status = $_POST['status'];
+            $new_status = $_POST['status'] ?? '';
+            $allowed_statuses = ['Received', 'Diagnosing', 'Waiting for Parts', 'In Repair', 'Ready for Pickup', 'Completed', 'Closed', 'Cancelled'];
+            if (!in_array($new_status, $allowed_statuses, true)) {
+                throw new InvalidArgumentException('Invalid repair status.');
+            }
             $diagnosis = trim($_POST['diagnosis_notes'] ?? '');
-            $labor_fee = (float)($_POST['labor_fee'] ?? 0);
-            $parts_cost = (float)($_POST['parts_cost'] ?? 0);
+            $labor_fee = max(0, (float)($_POST['labor_fee'] ?? 0));
+            $parts_cost = max(0, (float)($_POST['parts_cost'] ?? 0));
             $total_amt = $labor_fee + $parts_cost;
             $is_approved = isset($_POST['is_quote_approved']) ? 1 : 0;
             $tech_id = !empty($_POST['technician_id']) ? (int)$_POST['technician_id'] : null;
 
-            $delivered_date = ($new_status === 'Delivered' || $new_status === 'Closed') ? date('Y-m-d H:i:s') : null;
+            $delivered_date = $new_status === 'Closed' ? date('Y-m-d H:i:s') : null;
 
             $stmt = $pdo->prepare("
                 UPDATE repair_jobs SET 
@@ -74,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Repair Job #$job_id updated successfully!";
         } catch (Exception $e) {
-            $msg = "Error updating job: " . $e->getMessage();
+            $msg = "Error updating job: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -138,72 +151,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-// Demo fallback seed if empty
-if (empty($repairs) && !$pdo) {
-    $repairs = [
-        [
-            'id' => 1,
-            'ticket_no' => 'RPR-260816-101',
-            'customer_name' => 'Alice Wonderland',
-            'customer_phone' => '555-1234',
-            'device_type' => 'Laptop',
-            'device_brand' => 'Dell',
-            'device_model' => 'XPS 15 9500',
-            'serial_number' => 'DL-98214-XPS',
-            'issue_description' => 'No display output, power LED blinks 3 amber 2 white (RAM failure).',
-            'diagnosis_notes' => 'Tested with replacement DDR4 SODIMM. Motherboard channel 1 working.',
-            'technician_name' => 'Technician Alex',
-            'status' => 'In Repair',
-            'labor_fee' => 45.00,
-            'parts_cost' => 65.00,
-            'total_amount' => 110.00,
-            'is_quote_approved' => 1,
-            'public_token' => 'demo_token_1',
-            'received_date' => date('Y-m-d H:i:s', strtotime('-1 day'))
-        ],
-        [
-            'id' => 2,
-            'ticket_no' => 'RPR-260816-102',
-            'customer_name' => 'Michael Chang',
-            'customer_phone' => '555-9876',
-            'device_type' => 'Desktop PC',
-            'device_brand' => 'Custom Gaming Rig',
-            'device_model' => 'Ryzen 7 7800X3D',
-            'serial_number' => 'CST-48192',
-            'issue_description' => 'Liquid cooler pump failure, CPU overheating over 95C and throttling.',
-            'diagnosis_notes' => 'AIO pump RPM is 0. Needs replacement 240mm AIO or dual tower air cooler.',
-            'technician_name' => 'Technician Alex',
-            'status' => 'Waiting for Parts',
-            'labor_fee' => 35.00,
-            'parts_cost' => 120.00,
-            'total_amount' => 155.00,
-            'is_quote_approved' => 1,
-            'public_token' => 'demo_token_2',
-            'received_date' => date('Y-m-d H:i:s', strtotime('-2 days'))
-        ],
-        [
-            'id' => 3,
-            'ticket_no' => 'RPR-260816-103',
-            'customer_name' => 'Robert Fox',
-            'customer_phone' => '555-3344',
-            'device_type' => 'GPU',
-            'device_brand' => 'Asus RTX 3080',
-            'device_model' => 'TUF Gaming 10GB',
-            'serial_number' => 'SN-AS-3080-99',
-            'issue_description' => 'Artifacting on screen under 3D load, fan bearing rattling.',
-            'diagnosis_notes' => 'Repasted thermal paste, replaced thermal pads and center fan.',
-            'technician_name' => 'Technician Alex',
-            'status' => 'Ready for Pickup',
-            'labor_fee' => 60.00,
-            'parts_cost' => 25.00,
-            'total_amount' => 85.00,
-            'is_quote_approved' => 1,
-            'public_token' => 'demo_token_3',
-            'received_date' => date('Y-m-d H:i:s', strtotime('-3 days'))
-        ]
-    ];
-    $stats = ['received' => 1, 'in_progress' => 2, 'ready' => 1, 'completed' => 5];
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -398,13 +345,15 @@ if (empty($repairs) && !$pdo) {
                             <!-- Actions -->
                             <td class="py-4 pl-4 pr-2 text-right">
                                 <div class="flex items-center justify-end gap-2">
-                                    <a href="track.php?ticket=<?php echo urlencode($r['ticket_no'] ?? $r['id']); ?>" target="_blank" title="Open Customer View" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
+                                    <a href="track.php?ticket=<?php echo urlencode($r['public_token'] ?? $r['ticket_no'] ?? $r['id']); ?>" target="_blank" title="Open Customer View" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                     </a>
+                                    <?php if ($can_update_repairs): ?>
                                     <button onclick="openManageJobModal(<?php echo htmlspecialchars(json_encode($r)); ?>)" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5">
                                         <i class="fa-solid fa-screwdriver-wrench text-xs"></i>
                                         <span>Update</span>
                                     </button>
+                                    <?php endif; ?>
                                 </div>
                             </td>
 

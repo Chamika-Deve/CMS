@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS `product_bundles` (
   `component_product_id` bigint unsigned NOT NULL,
   `quantity` int NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Dumping data for table csms_db.product_bundles: ~0 rows (approximately)
 
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS `products` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `category_id` bigint unsigned NOT NULL,
-  `brand_id` bigint unsigned NOT NULL,
+  `brand_id` bigint unsigned DEFAULT NULL,
   `product_code` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `ean` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `upc` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS `purchase_returns` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `return_no` (`return_no`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Dumping data for table csms_db.purchase_returns: ~0 rows (approximately)
 INSERT INTO `purchase_returns` (`id`, `return_no`, `supplier_id`, `product_id`, `serial_number`, `quantity`, `refund_amount`, `reason`, `refund_type`, `created_at`) VALUES
@@ -310,20 +310,69 @@ INSERT INTO `purchases` (`id`, `supplier_id`, `invoice_no`, `purchase_date`, `to
 	(6, 1, 'PO-260816-562', '2026-08-16', 25200.00, 'Received', '2026-08-16 11:24:13', '2026-08-16 11:24:48', NULL, 0.00, 0.00, NULL),
 	(7, 1, 'PO-VAL-1786879967', '2026-08-16', 6000.00, 'Sent to Supplier', '2026-08-16 11:32:47', '2026-08-16 11:32:47', NULL, 0.00, 0.00, NULL);
 
+-- Dumping structure for table csms_db.expenses
+CREATE TABLE IF NOT EXISTS `expenses` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'General',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `payment_method` enum('Cash','Card','Bank Transfer') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Cash',
+  `expense_date` date NOT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `receipt_file` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` bigint unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `created_by` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dumping structure for table csms_db.cash_registers
+CREATE TABLE IF NOT EXISTS `cash_registers` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint unsigned NOT NULL,
+  `opening_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `closing_time` datetime DEFAULT NULL,
+  `opening_cash` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `closing_cash_actual` decimal(10,2) DEFAULT NULL,
+  `closing_cash_system` decimal(10,2) DEFAULT NULL,
+  `cash_difference` decimal(10,2) DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `status` enum('Open','Closed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Open',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Dumping structure for table csms_db.repair_jobs
 CREATE TABLE IF NOT EXISTS `repair_jobs` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `ticket_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `customer_id` bigint unsigned NOT NULL,
-  `device_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `device_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Laptop',
+  `device_brand` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `device_model` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `serial_number` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `passcode_pin` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `issue_description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `diagnosis_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `accessories_included` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `technician_id` bigint unsigned DEFAULT NULL,
-  `status` enum('Received','Diagnosing','In Progress','Waiting for Parts','Completed','Delivered') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Received',
-  `received_date` datetime NOT NULL,
+  `status` enum('Received','Diagnosing','Waiting for Parts','In Repair','Ready for Pickup','Completed','Closed','Cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Received',
+  `estimated_cost` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `labor_fee` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `parts_cost` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `total_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `is_quote_approved` tinyint(1) NOT NULL DEFAULT '0',
+  `warranty_days` int NOT NULL DEFAULT '30',
+  `public_token` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `received_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `delivered_date` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `ticket_no` (`ticket_no`),
+  UNIQUE KEY `public_token` (`public_token`),
   KEY `customer_id` (`customer_id`),
   KEY `technician_id` (`technician_id`),
   CONSTRAINT `repair_jobs_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE RESTRICT,
@@ -338,7 +387,10 @@ CREATE TABLE IF NOT EXISTS `repair_parts_used` (
   `repair_job_id` bigint unsigned NOT NULL,
   `product_id` bigint unsigned NOT NULL,
   `product_serial_id` bigint unsigned DEFAULT NULL,
-  `quantity` int NOT NULL,
+  `quantity` int NOT NULL DEFAULT '1',
+  `unit_cost` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `unit_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `repair_job_id` (`repair_job_id`),
   KEY `product_id` (`product_id`),
@@ -464,7 +516,7 @@ CREATE TABLE IF NOT EXISTS `stock_movements` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `product_id` (`product_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Dumping data for table csms_db.stock_movements: ~0 rows (approximately)
 
@@ -500,33 +552,41 @@ CREATE TABLE IF NOT EXISTS `users` (
   `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `role` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Cashier',
+  `phone` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `branch_id` int NOT NULL DEFAULT '1',
   `status` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table csms_db.users: ~5 rows (approximately)
+-- Dumping data for table csms_db.users: ~7 rows (approximately)
 INSERT INTO `users` (`id`, `name`, `email`, `password`, `role`, `status`, `created_at`, `updated_at`) VALUES
 	(1, 'Admin User', 'admin@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Admin', 1, '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
 	(2, 'Manager User', 'manager@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Manager', 1, '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
 	(3, 'Cashier User', 'cashier@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Cashier', 1, '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
 	(4, 'Tech User', 'tech@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Technician', 1, '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
-	(5, 'Software Engineer (SuperAdmin)', 'superadmin@example.com', '$2y$12$.raE1VMrm4emjKD2IdafNej/vTq9pn8nsNbk44Bupci0KwkOZ90EC', 'SuperAdmin', 1, '2026-08-16 12:13:14', '2026-08-16 12:13:14');
+	(5, 'Software Engineer (SuperAdmin)', 'superadmin@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'SuperAdmin', 1, '2026-08-16 12:13:14', '2026-08-16 12:13:14'),
+	(6, 'Inventory Staff Dave', 'inventory@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Inventory', 1, '2026-08-16 12:13:14', '2026-08-16 12:13:14'),
+	(7, 'Accountant Sarah', 'accountant@example.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Accountant', 1, '2026-08-16 12:13:14', '2026-08-16 12:13:14');
 
 -- Dumping structure for table csms_db.warranty_claims
 CREATE TABLE IF NOT EXISTS `warranty_claims` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `claim_no` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `product_serial_id` bigint unsigned NOT NULL,
   `customer_id` bigint unsigned NOT NULL,
   `claim_date` date NOT NULL,
   `issue` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `status` enum('Pending','Approved','Rejected','Repaired','Replaced') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
+  `claim_type` enum('In-House Repair','Supplier RMA','Replacement','Refund') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'In-House Repair',
+  `status` enum('Pending','Approved','In Supplier RMA','Repaired','Replaced','Refunded','Rejected') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
   `resolution` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `created_by` bigint unsigned DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `claim_no` (`claim_no`),
   KEY `product_serial_id` (`product_serial_id`),
   KEY `customer_id` (`customer_id`),
   CONSTRAINT `warranty_claims_ibfk_1` FOREIGN KEY (`product_serial_id`) REFERENCES `product_serials` (`id`) ON DELETE RESTRICT,

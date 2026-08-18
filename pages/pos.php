@@ -1,83 +1,62 @@
 <?php
 require_once '../includes/db.php';
+require_once '../includes/auth.php';
+enforce_page_access('pos.php');
 
-// Handle AJAX requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    header('Content-Type: application/json');
+// Handle authenticated POS AJAX requests.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $respond = static function (array $payload, int $status = 200): void {
+        http_response_code($status);
+        echo json_encode($payload);
+        exit;
+    };
+
+    if (!$pdo) {
+        $respond(['success' => false, 'message' => 'Database connection is unavailable.'], 503);
+    }
+
     $action = $_POST['action'];
 
-    if ($action === 'get_serials') {
-        $product_id = (int)$_POST['product_id'];
-        $stmt = $pdo->prepare("SELECT id, serial_number FROM product_serials WHERE product_id = ? AND status = 'in_stock'");
-        $stmt->execute([$product_id]);
-        $serials = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(['success' => true, 'serials' => $serials]);
-        exit;
-    }
+    try {
+        if ($action === 'get_serials') {
+            $productId = (int)($_POST['product_id'] ?? 0);
+            if ($productId < 1) {
+                $respond(['success' => false, 'message' => 'Invalid product.'], 422);
+            }
 
-    if ($action === 'verify_serial') {
-        $product_id = (int)$_POST['product_id'];
-        $serial_number = trim($_POST['serial_number']);
-        
-        if (empty($serial_number)) {
-            echo json_encode(['success' => false, 'message' => 'Serial number cannot be empty.']);
-            exit;
+            $stmt = $pdo->prepare("SELECT id, serial_number FROM product_serials WHERE product_id = ? AND status = 'in_stock' ORDER BY id");
+            $stmt->execute([$productId]);
+            $respond(['success' => true, 'serials' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
         }
 
-        $stmt = $pdo->prepare("
-            SELECT ps.id as serial_id, ps.serial_number, ps.product_id, ps.status,
-                   p.name as product_name, p.selling_price, p.min_price, p.max_price
-            FROM product_serials ps
-            JOIN products p ON ps.product_id = p.id
-            WHERE ps.product_id = ? AND ps.serial_number = ?
-        ");
-        $stmt->execute([$product_id, $serial_number]);
-        $serial = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($action === 'verify_serial') {
+            $productId = (int)($_POST['product_id'] ?? 0);
+            $serialNumber = trim($_POST['serial_number'] ?? '');
+            if ($productId < 1 || $serialNumber === '') {
+                $respond(['success' => false, 'message' => 'A product and serial number are required.'], 422);
+            }
 
-        if (!$serial) {
-            echo json_encode(['success' => false, 'message' => "Serial number '$serial_number' not found for this product."]);
-            exit;
-        }
+            $stmt = $pdo->prepare("
+                SELECT ps.id AS serial_id, ps.serial_number, ps.product_id, ps.status,
+                       p.name AS product_name, p.selling_price, p.min_price, p.max_price
+                FROM product_serials ps
+                JOIN products p ON ps.product_id = p.id
+                WHERE ps.product_id = ? AND ps.serial_number = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$productId, $serialNumber]);
+            $serial = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($serial['status'] !== 'in_stock') {
-            echo json_encode(['success' => false, 'message' => "Serial number '$serial_number' is " . str_replace('_', ' ', $serial['status']) . "."]);
-            exit;
-        }
+            if (!$serial) {
+                $respond(['success' => false, 'message' => 'That serial number was not found for this product.'], 404);
+            }
+            if ($serial['status'] !== 'in_stock') {
+                $respond(['success' => false, 'message' => 'That serial number is ' . str_replace('_', ' ', $serial['status']) . '.'], 409);
+            }
 
-        echo json_encode([
-            'success' => true,
-            'serial' => [
-                'serial_id' => (int)$serial['serial_id'],
-                'serial_number' => $serial['serial_number'],
-                'product_id' => (int)$serial['product_id'],
-                'product_name' => $serial['product_name'],
-                'selling_price' => (float)$serial['selling_price'],
-                'min_price' => (float)$serial['min_price'],
-                'max_price' => (float)$serial['max_price']
-            ]
-        ]);
-        exit;
-    }
-
-    if ($action === 'search_serial') {
-        $serial_number = trim($_POST['serial_number']);
-        if (empty($serial_number)) {
-            echo json_encode(['success' => false, 'message' => 'Serial number cannot be empty.']);
-            exit;
-        }
-
-        $stmt = $pdo->prepare("
-            SELECT ps.id as serial_id, ps.serial_number, ps.product_id, ps.status,
-                   p.name as product_name, p.selling_price, p.min_price, p.max_price
-            FROM product_serials ps
-            JOIN products p ON ps.product_id = p.id
-            WHERE ps.serial_number = ? AND ps.status = 'in_stock'
-        ");
-        $stmt->execute([$serial_number]);
-        $serial = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($serial) {
-            echo json_encode([
+            $respond([
                 'success' => true,
                 'serial' => [
                     'serial_id' => (int)$serial['serial_id'],
@@ -86,77 +65,170 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'product_name' => $serial['product_name'],
                     'selling_price' => (float)$serial['selling_price'],
                     'min_price' => (float)$serial['min_price'],
-                    'max_price' => (float)$serial['max_price']
-                ]
+                    'max_price' => (float)$serial['max_price'],
+                ],
             ]);
-        } else {
-            echo json_encode(['success' => false, 'message' => "Serial number '$serial_number' not found or not in stock."]);
-        }
-        exit;
-    }
-
-    if ($action === 'process_sale') {
-        $cart = json_decode($_POST['cart'], true);
-        $customer_id = !empty($_POST['customer_id']) ? (int)$_POST['customer_id'] : null;
-        $payment_method = $_POST['payment_method'];
-        
-        if (empty($cart)) {
-            echo json_encode(['success' => false, 'message' => 'Cart is empty']);
-            exit;
         }
 
-        $subtotal = 0;
-        foreach($cart as $item) {
-            $subtotal += ($item['price'] * count($item['serials']));
-        }
-        
-        // Fetch tax rate from settings
-        $stmt_tax = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'tax_rate'");
-        $tax_rate = (float)$stmt_tax->fetchColumn();
-        
-        $tax = $subtotal * ($tax_rate / 100);
-        $total_amount = $subtotal + $tax;
-        
-        $invoice_no = 'INV-' . date('Ymd-His') . '-' . rand(10,99);
-        
-        try {
-            $pdo->beginTransaction();
-            
-            // Insert sale
-            $stmt = $pdo->prepare("INSERT INTO sales (customer_id, invoice_no, sale_date, total_amount, tax, payment_method, status) VALUES (?, ?, NOW(), ?, ?, ?, 'Completed')");
-            $stmt->execute([$customer_id, $invoice_no, $total_amount, $tax, $payment_method]);
-            $sale_id = $pdo->lastInsertId();
-            
-            // Prepare statements
-            $stmt_item = $pdo->prepare("INSERT INTO sale_items (sale_id, product_id, product_serial_id, quantity, unit_price) VALUES (?, ?, ?, 1, ?)");
-            $stmt_update_serial = $pdo->prepare("UPDATE product_serials SET status = 'sold' WHERE id = ?");
-            
-            foreach($cart as $item) {
-                foreach($item['serials'] as $serial) {
-                    // Verify serial is still in stock
-                    $check = $pdo->prepare("SELECT status FROM product_serials WHERE id = ?");
-                    $check->execute([$serial['serial_id']]);
-                    $serial_status = $check->fetchColumn();
-                    
-                    if ($serial_status !== 'in_stock') {
-                        throw new Exception("Serial " . $serial['serial_number'] . " is no longer in stock.");
-                    }
+        if ($action === 'search_serial') {
+            $serialNumber = trim($_POST['serial_number'] ?? '');
+            if ($serialNumber === '') {
+                $respond(['success' => false, 'message' => 'Serial number cannot be empty.'], 422);
+            }
 
-                    // Insert item and update serial
-                    $stmt_item->execute([$sale_id, $item['product_id'], $serial['serial_id'], $item['price']]);
-                    $stmt_update_serial->execute([$serial['serial_id']]);
+            $stmt = $pdo->prepare("
+                SELECT ps.id AS serial_id, ps.serial_number, ps.product_id, ps.status,
+                       p.name AS product_name, p.selling_price, p.min_price, p.max_price
+                FROM product_serials ps
+                JOIN products p ON ps.product_id = p.id
+                WHERE ps.serial_number = ? AND ps.status = 'in_stock'
+                LIMIT 1
+            ");
+            $stmt->execute([$serialNumber]);
+            $serial = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$serial) {
+                $respond(['success' => false, 'message' => 'That serial number was not found or is not in stock.'], 404);
+            }
+
+            $respond([
+                'success' => true,
+                'serial' => [
+                    'serial_id' => (int)$serial['serial_id'],
+                    'serial_number' => $serial['serial_number'],
+                    'product_id' => (int)$serial['product_id'],
+                    'product_name' => $serial['product_name'],
+                    'selling_price' => (float)$serial['selling_price'],
+                    'min_price' => (float)$serial['min_price'],
+                    'max_price' => (float)$serial['max_price'],
+                ],
+            ]);
+        }
+
+        if ($action === 'process_sale') {
+            try {
+                $cart = json_decode($_POST['cart'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw new InvalidArgumentException('The cart data is invalid.');
+            }
+
+            if (!is_array($cart) || $cart === []) {
+                throw new InvalidArgumentException('Cart is empty.');
+            }
+
+            $paymentMethod = $_POST['payment_method'] ?? '';
+            $allowedPaymentMethods = ['Cash', 'Card', 'Bank Transfer'];
+            if (!in_array($paymentMethod, $allowedPaymentMethods, true)) {
+                throw new InvalidArgumentException('Select a valid payment method.');
+            }
+
+            $customerId = !empty($_POST['customer_id']) ? (int)$_POST['customer_id'] : null;
+            if ($customerId !== null) {
+                $customerCheck = $pdo->prepare('SELECT id FROM customers WHERE id = ?');
+                $customerCheck->execute([$customerId]);
+                if (!$customerCheck->fetchColumn()) {
+                    throw new InvalidArgumentException('The selected customer no longer exists.');
                 }
             }
-            
+
+            $pdo->beginTransaction();
+            $lockedSerials = [];
+            $seenSerialIds = [];
+            $subtotal = 0.0;
+            $lockSerial = $pdo->prepare("
+                SELECT ps.id, ps.product_id, ps.serial_number, ps.status,
+                       p.name AS product_name, p.selling_price, p.min_price, p.max_price
+                FROM product_serials ps
+                JOIN products p ON p.id = ps.product_id
+                WHERE ps.id = ?
+                FOR UPDATE
+            ");
+
+            foreach ($cart as $item) {
+                if (!is_array($item)) {
+                    throw new InvalidArgumentException('The cart contains an invalid item.');
+                }
+
+                $productId = (int)($item['product_id'] ?? 0);
+                $unitPrice = filter_var($item['price'] ?? null, FILTER_VALIDATE_FLOAT);
+                $serials = $item['serials'] ?? null;
+                if ($productId < 1 || $unitPrice === false || $unitPrice <= 0 || !is_array($serials) || $serials === []) {
+                    throw new InvalidArgumentException('Every cart item must have a valid product, price, and serial number.');
+                }
+
+                foreach ($serials as $serialInput) {
+                    $serialId = (int)($serialInput['serial_id'] ?? 0);
+                    if ($serialId < 1 || isset($seenSerialIds[$serialId])) {
+                        throw new InvalidArgumentException('A serial number is invalid or appears more than once in the cart.');
+                    }
+                    $seenSerialIds[$serialId] = true;
+
+                    $lockSerial->execute([$serialId]);
+                    $serial = $lockSerial->fetch(PDO::FETCH_ASSOC);
+                    if (!$serial || (int)$serial['product_id'] !== $productId) {
+                        throw new InvalidArgumentException('A selected serial number does not belong to its cart product.');
+                    }
+                    if ($serial['status'] !== 'in_stock') {
+                        throw new RuntimeException('Serial ' . $serial['serial_number'] . ' is no longer in stock.');
+                    }
+
+                    $minimum = (float)$serial['min_price'];
+                    $maximum = (float)$serial['max_price'];
+                    if ($minimum > 0 && $unitPrice < $minimum) {
+                        throw new InvalidArgumentException($serial['product_name'] . ' cannot be sold below its minimum price.');
+                    }
+                    if ($maximum > 0 && $unitPrice > $maximum) {
+                        throw new InvalidArgumentException($serial['product_name'] . ' cannot be sold above its maximum price.');
+                    }
+
+                    $lockedSerials[] = [
+                        'id' => $serialId,
+                        'product_id' => (int)$serial['product_id'],
+                        'unit_price' => (float)$unitPrice,
+                    ];
+                    $subtotal += (float)$unitPrice;
+                }
+            }
+
+            $taxStatement = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'tax_rate' LIMIT 1");
+            $taxRate = max(0.0, min(100.0, (float)$taxStatement->fetchColumn()));
+            $tax = round($subtotal * ($taxRate / 100), 2);
+            $totalAmount = round($subtotal + $tax, 2);
+            $invoiceNo = 'INV-' . date('Ymd-His') . '-' . random_int(10, 99);
+
+            $saleStatement = $pdo->prepare("INSERT INTO sales (customer_id, invoice_no, sale_date, total_amount, tax, payment_method, status) VALUES (?, ?, NOW(), ?, ?, ?, 'Completed')");
+            $saleStatement->execute([$customerId, $invoiceNo, $totalAmount, $tax, $paymentMethod]);
+            $saleId = (int)$pdo->lastInsertId();
+
+            $itemStatement = $pdo->prepare('INSERT INTO sale_items (sale_id, product_id, product_serial_id, quantity, unit_price) VALUES (?, ?, ?, 1, ?)');
+            $serialStatement = $pdo->prepare("UPDATE product_serials SET status = 'sold', sale_id = ? WHERE id = ? AND status = 'in_stock'");
+            foreach ($lockedSerials as $serial) {
+                $itemStatement->execute([$saleId, $serial['product_id'], $serial['id'], $serial['unit_price']]);
+                $serialStatement->execute([$saleId, $serial['id']]);
+                if ($serialStatement->rowCount() !== 1) {
+                    throw new RuntimeException('Stock changed while the sale was being completed. Please retry.');
+                }
+            }
+
             $pdo->commit();
-            echo json_encode(['success' => true, 'invoice_no' => $invoice_no, 'sale_id' => $sale_id]);
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            $respond(['success' => true, 'invoice_no' => $invoiceNo, 'sale_id' => $saleId]);
         }
-        exit;
+
+        $respond(['success' => false, 'message' => 'Unknown POS action.'], 400);
+    } catch (InvalidArgumentException | RuntimeException $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $respond(['success' => false, 'message' => safe_error_message($exception)], 422);
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('POS request failed: ' . $exception->getMessage());
+        $respond(['success' => false, 'message' => 'The POS request could not be completed. Please retry.'], 500);
     }
 }
+
 
 require_once '../includes/header.php';
 
@@ -196,7 +268,7 @@ if ($pdo) {
         $c_stmt = $pdo->query("SELECT id, name, phone FROM customers ORDER BY name ASC");
         $customers = $c_stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (\PDOException $e) {
-        $db_error = $e->getMessage();
+        $db_error = safe_error_message($e);
     }
 }
 ?>

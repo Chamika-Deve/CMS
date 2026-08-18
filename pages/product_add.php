@@ -25,8 +25,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $specs = trim($_POST['specifications'] ?? '');
         $desc = trim($_POST['description'] ?? '');
 
-        if (empty($name)) {
-            throw new Exception("Product name is required.");
+        if ($name === '' || !$cat_id) {
+            throw new InvalidArgumentException('Product name and category are required.');
+        }
+        if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0) {
+            throw new InvalidArgumentException('Product prices cannot be negative.');
+        }
+        if ($tax_rate < 0 || $tax_rate > 100 || $reorder_level < 0) {
+            throw new InvalidArgumentException('Tax must be 0–100 and reorder level cannot be negative.');
+        }
+        if (!in_array($status, ['Active', 'Discontinued'], true)) {
+            throw new InvalidArgumentException('Invalid product status.');
         }
 
         if (empty($code)) {
@@ -49,9 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         ]);
         $success = true;
     } catch (\PDOException $e) {
-        $error = "Failed to add product: " . $e->getMessage();
+        $error = "Failed to add product: " . safe_error_message($e);
     } catch (Exception $e) {
-        $error = $e->getMessage();
+        $error = safe_error_message($e);
     }
 }
 

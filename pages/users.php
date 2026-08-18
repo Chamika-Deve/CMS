@@ -5,6 +5,17 @@ require_once '../includes/header.php';
 $msg = '';
 $msg_type = 'success';
 
+$assignable_roles = match ($role) {
+    'SuperAdmin' => ['Admin', 'Manager', 'Cashier', 'Technician', 'Inventory', 'Accountant', 'SuperAdmin'],
+    'Admin' => ['Admin', 'Manager', 'Cashier', 'Technician', 'Inventory', 'Accountant'],
+    'Manager' => ['Cashier', 'Technician', 'Inventory', 'Accountant'],
+    default => [],
+};
+
+$can_manage_role = static function (string $target_role) use ($assignable_roles): bool {
+    return in_array($target_role, $assignable_roles, true);
+};
+
 // Handle User Management Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
@@ -13,18 +24,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         try {
             $name = trim($_POST['name'] ?? '');
             $email = trim($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? 'password';
+            $password = $_POST['password'] ?? '';
             $role_input = $_POST['role'] ?? 'Cashier';
             $phone = trim($_POST['phone'] ?? '');
-            $branch = (int)($_POST['branch_id'] ?? 1);
+            $branch = max(1, (int)($_POST['branch_id'] ?? 1));
             $status = isset($_POST['status']) ? 1 : 0;
 
-            $hash = password_hash($password, PASSWORD_BCRYPT);
+            if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('A name and valid email address are required.');
+            }
+            if (strlen($password) < 8) {
+                throw new InvalidArgumentException('Passwords must contain at least 8 characters.');
+            }
+            if (!$can_manage_role($role_input)) {
+                throw new RuntimeException('You cannot assign that role.');
+            }
+
+            $hash = password_hash($password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, phone, branch_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$name, $email, $hash, $role_input, $phone, $branch, $status]);
             $msg = "User \"$name\" ($role_input) created successfully!";
         } catch (Exception $e) {
-            $msg = "Error creating user: " . $e->getMessage();
+            $msg = "Error creating user: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -36,11 +57,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $email = trim($_POST['email'] ?? '');
             $role_input = $_POST['role'] ?? 'Cashier';
             $phone = trim($_POST['phone'] ?? '');
-            $branch = (int)($_POST['branch_id'] ?? 1);
+            $branch = max(1, (int)($_POST['branch_id'] ?? 1));
             $status = isset($_POST['status']) ? 1 : 0;
 
+            $target_statement = $pdo->prepare('SELECT role FROM users WHERE id = ?');
+            $target_statement->execute([$id]);
+            $existing_role = $target_statement->fetchColumn();
+            if (!$existing_role || !$can_manage_role($existing_role) || !$can_manage_role($role_input)) {
+                throw new RuntimeException('You cannot modify this user or assign that role.');
+            }
+            if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('A name and valid email address are required.');
+            }
+
             if (!empty($_POST['password'])) {
-                $hash = password_hash($_POST['password'], PASSWORD_BCRYPT);
+                if (strlen($_POST['password']) < 8) {
+                    throw new InvalidArgumentException('Passwords must contain at least 8 characters.');
+                }
+                $hash = password_hash($_POST['password'], PASSWORD_DEFAULT);
                 $stmt = $pdo->prepare("UPDATE users SET name=?, email=?, password=?, role=?, phone=?, branch_id=?, status=? WHERE id=?");
                 $stmt->execute([$name, $email, $hash, $role_input, $phone, $branch, $status, $id]);
             } else {
@@ -49,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $msg = "User updated successfully!";
         } catch (Exception $e) {
-            $msg = "Error updating user: " . $e->getMessage();
+            $msg = "Error updating user: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -62,16 +96,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $chk->execute([$id]);
             $target_role = $chk->fetchColumn();
 
-            if ($id === 1 || $target_role === 'SuperAdmin') {
-                $msg = "Cannot delete root system administrator / SuperAdmin account.";
-                $msg_type = 'error';
-            } else {
-                $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-                $stmt->execute([$id]);
-                $msg = "User removed successfully.";
+            if ($id < 1 || $id === (int)($user['id'] ?? 0)) {
+                throw new RuntimeException('You cannot delete your own account.');
             }
+            if (!$target_role || !$can_manage_role($target_role)) {
+                throw new RuntimeException('You cannot delete this user.');
+            }
+
+            $stmt = $pdo->prepare('DELETE FROM users WHERE id = ?');
+            $stmt->execute([$id]);
+            $msg = 'User removed successfully.';
         } catch (Exception $e) {
-            $msg = "Error removing user: " . $e->getMessage();
+            $msg = "Error removing user: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -88,17 +124,6 @@ if ($pdo) {
             $users_list = $pdo->query("SELECT * FROM users WHERE role != 'SuperAdmin' ORDER BY id ASC")->fetchAll();
         }
     } catch (Exception $e) {}
-}
-
-if (empty($users_list) && !$pdo) {
-    $users_list = [
-        ['id' => 1, 'name' => 'Admin User', 'email' => 'admin@example.com', 'role' => 'Admin', 'phone' => '+94 77 123 4567', 'status' => 1, 'branch_id' => 1],
-        ['id' => 2, 'name' => 'Manager User', 'email' => 'manager@example.com', 'role' => 'Manager', 'phone' => '+94 77 234 5678', 'status' => 1, 'branch_id' => 1],
-        ['id' => 3, 'name' => 'Cashier User', 'email' => 'cashier@example.com', 'role' => 'Cashier', 'phone' => '+94 77 345 6789', 'status' => 1, 'branch_id' => 1],
-        ['id' => 4, 'name' => 'Technician Alex', 'email' => 'tech@example.com', 'role' => 'Technician', 'phone' => '+94 77 456 7890', 'status' => 1, 'branch_id' => 1],
-        ['id' => 5, 'name' => 'Inventory Staff Dave', 'email' => 'inventory@example.com', 'role' => 'Inventory', 'phone' => '+94 77 567 8901', 'status' => 1, 'branch_id' => 1],
-        ['id' => 6, 'name' => 'Accountant Sarah', 'email' => 'accountant@example.com', 'role' => 'Accountant', 'phone' => '+94 77 678 9012', 'status' => 1, 'branch_id' => 1]
-    ];
 }
 
 // Active Tab
@@ -360,7 +385,7 @@ $tab = $_GET['tab'] ?? 'users';
                                 </button>
                                 <?php endif; ?>
 
-                                <?php if ($u['id'] != 1 && $u['role'] !== 'SuperAdmin'): ?>
+                                <?php if ((int)$u['id'] !== (int)($user['id'] ?? 0) && $can_manage_role($u['role'])): ?>
                                 <form method="POST" action="users.php" onsubmit="return confirm('Delete user <?php echo addslashes($u['name']); ?>?');" class="inline">
                                     <input type="hidden" name="action" value="delete_user">
                                     <input type="hidden" name="id" value="<?php echo $u['id']; ?>">
@@ -417,15 +442,20 @@ $tab = $_GET['tab'] ?? 'users';
                 <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Role *</label>
                     <select name="role" id="userRole" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
-                        <?php if ($role === 'SuperAdmin'): ?>
-                        <option value="SuperAdmin">SuperAdmin (Software Engineer)</option>
-                        <?php endif; ?>
-                        <option value="Admin">Owner / Admin</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Cashier">Cashier / Front Desk</option>
-                        <option value="Technician">Repair Technician</option>
-                        <option value="Inventory">Inventory / Purchasing</option>
-                        <option value="Accountant">Accountant / Finance</option>
+                        <?php
+                        $role_labels = [
+                            'SuperAdmin' => 'SuperAdmin (Software Engineer)',
+                            'Admin' => 'Owner / Admin',
+                            'Manager' => 'Manager',
+                            'Cashier' => 'Cashier / Front Desk',
+                            'Technician' => 'Repair Technician',
+                            'Inventory' => 'Inventory / Purchasing',
+                            'Accountant' => 'Accountant / Finance',
+                        ];
+                        foreach ($assignable_roles as $assignable_role):
+                        ?>
+                        <option value="<?php echo htmlspecialchars($assignable_role); ?>"><?php echo htmlspecialchars($role_labels[$assignable_role] ?? $assignable_role); ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 <div>

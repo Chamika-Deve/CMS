@@ -1,5 +1,7 @@
 <?php
 require_once '../includes/db.php';
+require_once '../includes/auth.php';
+enforce_page_access('build_pc.php');
 
 // Handle AJAX Search for PC Builder
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'search_parts') {
@@ -18,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode(['success' => true, 'products' => $products]);
     } catch (\Exception $e) {
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
     }
     exit;
 }

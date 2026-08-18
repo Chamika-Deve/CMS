@@ -122,7 +122,7 @@ if ($pdo) {
         $low_stock_products = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
 
     } catch (\Exception $e) {
-        $db_error = $e->getMessage();
+        $db_error = safe_error_message($e);
     }
 }
 

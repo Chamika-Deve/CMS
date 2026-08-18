@@ -42,17 +42,9 @@ The app is designed to run on **XAMPP**, **Laragon**, or any local Apache + PHP 
 | **Reports & analytics** | Date ranges, revenue / profit / items / tax KPIs, sales trend, payment mix, category breakdown, top products, low-stock alerts, repair counts, recent invoices. Printable. |
 | **Settings (Admin)** | Shop profile, currency, tax, receipt width, return policy, timezone, system name, logo upload, factory reset. |
 
-### Schema ready, UI not built yet
+### Additional modules
 
-These tables exist in `detabase/csms_db.sql` and appear in the sidebar, but the pages currently show **Module Under Construction**:
-
-- Customers (`pages/customers.php`)
-- Suppliers (`pages/suppliers.php`)
-- Repair & Service (`pages/repairs.php`)
-- Warranty & Returns (`pages/warranty.php`)
-- Users & Roles (`pages/users.php`)
-
-The dashboard overview cards are still demo placeholders (not live SQL).
+The current version also includes customer and supplier CRUD, repair tickets with a public tracking link, warranty/RMA claims, staff and role management, accounting/cash-drawer tools, audit logs, and live dashboard KPIs. These modules require the current schema; existing installations should run `php setup_full_system.php` once after updating.
 
 ## 🧰 Tech stack
 
@@ -97,23 +89,28 @@ The dump creates `csms_db`, all tables, seed products, serials, users, suppliers
 
 ### 3. Configure the connection
 
-Edit `includes/db.php` if your MySQL credentials are not the XAMPP/Laragon defaults:
+The app reads database credentials from environment variables and otherwise uses standard local XAMPP/Laragon defaults (`root` with an empty password):
 
-```php
-$host = '127.0.0.1';
-$db   = 'csms_db';
-$user = 'root';
-$pass = ''; // default empty password
+| Variable | Default |
+| --- | --- |
+| `DB_HOST` | `127.0.0.1` |
+| `DB_PORT` | `3306` |
+| `DB_NAME` | `csms_db` |
+| `DB_USER` | `root` |
+| `DB_PASS` | empty |
+| `APP_DEBUG` | `false` |
+
+For Apache, set these with `SetEnv`; for PHP's development server or the CLI, export them in the shell. Do not commit real credentials to `includes/db.php`.
+
+### 4. Setup and upgrades
+
+The imported `detabase/csms_db.sql` already contains the complete current schema. To create a fresh schema without seed catalog data, or to upgrade an older installation, run:
+
+```bash
+DB_USER=root DB_PASS=your_password php setup_full_system.php
 ```
 
-### 4. Optional setup scripts
-
-Run these once in the browser if you need them:
-
-| Script | Purpose |
-| --- | --- |
-| `setup_settings.php` | Creates the `settings` table and inserts shop defaults (name, address, currency `Rs.`, timezone `Asia/Colombo`). |
-| `alter_db.php` | Adds `min_price` / `max_price` on `products` if you imported an older schema. |
+`setup_full_system.php` is idempotent. It creates missing tables/columns, repairs legacy repair and warranty schemas, inserts missing settings, and seeds missing demo staff without overwriting existing accounts. Set `CSMS_SEED_PASSWORD` to choose the initial seeded password. Maintenance scripts require CLI access or an authenticated SuperAdmin session.
 
 ### 5. Open the app
 
@@ -135,27 +132,33 @@ All seeded passwords are `password` (bcrypt hash in `users`).
 | Manager | `manager@example.com` | `password` |
 | Cashier | `cashier@example.com` | `password` |
 | Technician | `tech@example.com` | `password` |
+| Inventory | `inventory@example.com` | `password` |
+| Accountant | `accountant@example.com` | `password` |
+| SuperAdmin | `superadmin@example.com` | `password` |
 
-**Change these before any production use.**
+**Change these before any production use.** The setup script honors `CSMS_SEED_PASSWORD` when it creates missing accounts.
 
 ## 👥 Roles
 
-Access is enforced in `includes/header.php` (sidebar) and on Admin-only pages such as Settings.
+Access is enforced server-side by `includes/auth.php`; hiding a navigation item is not the security boundary.
 
-| Capability | Admin | Manager | Cashier | Technician |
-| --- | --- | --- | --- | --- |
-| Dashboard | ✓ | ✓ | ✓ | ✓ |
-| Products & inventory | ✓ | ✓ | ✓ | ✓ |
-| Sales / POS | ✓ | ✓ | ✓ | |
-| Build PC (quote) | ✓ | ✓ | ✓ | |
-| Purchases | ✓ | ✓ | | |
-| Customers | ✓ | ✓ | ✓ | |
-| Suppliers | ✓ | ✓ | | |
-| Repair & service | ✓ | ✓ | | ✓ |
-| Warranty & returns | ✓ | ✓ | ✓ | |
-| Reports | ✓ | ✓ | | |
-| Users & roles | ✓ | | | |
-| Settings | ✓ | | | |
+| Capability | Admin | Manager | Cashier | Technician | Inventory | Accountant |
+| --- | --- | --- | --- | --- | --- | --- |
+| Dashboard | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Products (view) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Catalog/stock changes | ✓ | ✓ | | | ✓ | |
+| Sales / POS and PC quotes | ✓ | ✓ | ✓ | | | |
+| Purchases / GRN | ✓ | ✓ | | | ✓ | |
+| Customers | ✓ | ✓ | ✓ | | | ✓ |
+| Suppliers | ✓ | ✓ | | | ✓ | ✓ |
+| Repair & service | ✓ | ✓ | ✓ | ✓ | | |
+| Warranty & returns | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| Accounting | ✓ | ✓ | ✓ | | | ✓ |
+| Reports | ✓ | ✓ | | ✓ | ✓ | ✓ |
+| Users & audit | ✓ | ✓ | | | | |
+| Shop settings | ✓ | | | | | |
+
+SuperAdmin is restricted to infrastructure settings, backups, audit/user administration, and shop settings. Server-side checks enforce the same access rules as the navigation.
 
 ## 🗂️ Project structure
 
@@ -164,11 +167,13 @@ CMS/
 ├── detabase/
 │   └── csms_db.sql          # Full schema + seed data
 ├── includes/
-│   ├── db.php               # PDO connection
-│   ├── header.php           # Auth guard, sidebar, layout start
+│   ├── auth.php             # Session, role, and CSRF enforcement
+│   ├── db.php               # Environment-driven PDO connection
+│   ├── schema.php           # Idempotent schema creation/upgrades
+│   ├── header.php           # Sidebar and layout start
 │   └── footer.php           # Layout end
 ├── pages/
-│   ├── dashboard.php        # Overview (placeholder KPIs)
+│   ├── dashboard.php        # Live sales, stock, and trend KPIs
 │   ├── products.php         # Catalog, categories, rapid stock-in
 │   ├── product_add.php      # New product model
 │   ├── product_edit.php     # Edit product
@@ -180,17 +185,17 @@ CMS/
 │   ├── purchases.php        # Rapid inbound stock entry
 │   ├── reports.php          # Analytics
 │   ├── settings.php         # Admin shop / billing / logo
-│   ├── customers.php        # Placeholder
-│   ├── suppliers.php        # Placeholder
-│   ├── repairs.php          # Placeholder
-│   ├── warranty.php         # Placeholder
-│   └── users.php            # Placeholder
+│   ├── customers.php        # Customer/CRM management
+│   ├── suppliers.php        # Supplier/AP management
+│   ├── repairs.php          # Repair workflow and tracking links
+│   ├── warranty.php         # Warranty and RMA claims
+│   └── users.php            # Staff and role management
 ├── uploads/
 │   └── logo/                # Uploaded shop logos
 ├── index.php                # Login
 ├── logout.php               # Destroy session
-├── setup_settings.php       # Seed settings table
-├── alter_db.php             # Product price-range migration
+├── setup_settings.php       # Initialize/repair settings
+├── alter_db.php             # Compatibility alias for full migration
 └── dump_cat.php             # Debug: dump categories as JSON
 ```
 
@@ -210,7 +215,8 @@ CMS/
 | `repair_jobs` / `repair_parts_used` | Service tickets |
 | `warranty_claims` | Warranty cases |
 | `settings` | Key/value shop configuration |
-| `activity_logs` | Audit trail (table exists; not yet written from the UI) |
+| `expenses` / `cash_registers` | Expense ledger and cash-drawer reconciliation |
+| `activity_logs` | Audit trail for purchasing, repairs, settings, and security actions |
 
 ## ⌨️ POS shortcuts
 
@@ -240,23 +246,23 @@ Seeded in `settings` (also reset from **Settings → Factory Reset**):
 
 ## 🔒 Security notes
 
-- Passwords are stored with PHP `password_hash` / `password_verify`.
-- Queries use PDO prepared statements.
-- Pages under `pages/` require a logged-in session (`includes/header.php`).
-- Settings and logo upload are Admin-only.
+- Passwords use `password_hash` / `password_verify`; the session ID and CSRF token rotate after login.
+- `includes/auth.php` enforces authentication, server-side role checks, disabled-account checks, global session invalidation, and CSRF validation.
+- POS checkout revalidates and locks serial stock, product ownership, and min/max pricing on the server before committing a sale.
+- Queries use PDO prepared statements, and database credentials can be supplied through environment variables.
+- Logo uploads are MIME/size validated and saved under random names; shop-setting keys are allowlisted.
+- Public repair lookup accepts only ticket numbers or unguessable tracking tokens; quote approval requires the tracking token.
 - Demo credentials are public — rotate them and set a MySQL password before deploying.
-- `alter_db.php`, `setup_settings.php`, and `dump_cat.php` are maintenance/debug scripts; do not leave them exposed on a public host.
+- Database/debug maintenance endpoints require CLI access or SuperAdmin authentication.
 
 ## 🗺️ Roadmap
 
-- [ ] Live dashboard KPIs from `sales` / `product_serials` / `repair_jobs`
-- [ ] Customers CRUD and POS “add customer”
-- [ ] Suppliers CRUD and full purchase invoices
-- [ ] Repair job workflow (status, parts used, technician assign)
-- [ ] Warranty claims against sold serials
-- [ ] Users & roles admin UI
-- [ ] Activity log writes
-- [ ] Mobile sidebar (hamburger is present but not wired)
+- [ ] Add automated integration tests with disposable MySQL/MariaDB
+- [ ] Add customer creation directly inside POS
+- [ ] Add purchase-return links to original PO line items
+- [ ] Add repair parts consumption from serialized inventory
+- [ ] Expand activity logging across all CRUD actions
+- [ ] Replace CDN frontend assets with a production build pipeline
 
 ## 📄 License
 

@@ -174,15 +174,15 @@ if ($dbOk) {
 
         // Repair summary
         $st = $pdo->prepare("SELECT COUNT(*) AS total,
-                                    COALESCE(SUM(status NOT IN ('Completed','Delivered')),0) AS active,
-                                    COALESCE(SUM(status IN ('Completed','Delivered')),0) AS done
+                                    COALESCE(SUM(status NOT IN ('Completed','Closed','Cancelled')),0) AS active,
+                                    COALESCE(SUM(status IN ('Completed','Closed')),0) AS done
                              FROM repair_jobs
                              WHERE received_date BETWEEN :from AND :to");
         $st->execute([':from'=>$dateFrom, ':to'=>$dateTo]);
         $r = $st->fetch();
         $repairStats = ['total'=>safe_int($r['total']),'active'=>safe_int($r['active']),'completed'=>safe_int($r['done'])];
     } catch (\Exception $e) {
-        $errorMsg = 'Query error: ' . $e->getMessage();
+        $errorMsg = 'Query error: ' . safe_error_message($e);
     }
 }
 

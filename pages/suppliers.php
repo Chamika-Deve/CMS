@@ -5,28 +5,12 @@ require_once '../includes/header.php';
 $msg = '';
 $msg_type = 'success';
 
-// Ensure table columns exist if running on older database schema
-if ($pdo) {
-    $ensureCol = function($tbl, $col, $def) use ($pdo) {
-        try {
-            $chk = $pdo->query("SHOW COLUMNS FROM `$tbl` LIKE '$col'");
-            if (!$chk->fetch()) {
-                $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` $def");
-            }
-        } catch (Exception $e) {}
-    };
-
-    $ensureCol('suppliers', 'payment_terms', "varchar(50) NOT NULL DEFAULT 'Net 30'");
-    $ensureCol('suppliers', 'balance_due', "decimal(10,2) NOT NULL DEFAULT 0.00");
-    $ensureCol('suppliers', 'tax_id', "varchar(100) DEFAULT NULL");
-    $ensureCol('suppliers', 'bank_details', "text DEFAULT NULL");
-    $ensureCol('suppliers', 'category', "varchar(100) DEFAULT 'Hardware'");
-    $ensureCol('suppliers', 'status', "varchar(50) NOT NULL DEFAULT 'Active'");
-    $ensureCol('suppliers', 'notes', "text DEFAULT NULL");
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
+
+    if ($action === 'delete_supplier' && !in_array($role, ['Admin', 'Manager'], true)) {
+        abort_request(403, 'Only a manager or administrator may delete suppliers.');
+    }
 
     if ($action === 'add_supplier' && $pdo) {
         try {
@@ -36,7 +20,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $email = trim($_POST['email'] ?? '');
             $address = trim($_POST['address'] ?? '');
             $terms = trim($_POST['payment_terms'] ?? 'Net 30');
-            $balance = (float)($_POST['balance_due'] ?? 0);
+            $balance = max(0, (float)($_POST['balance_due'] ?? 0));
+
+            if ($name === '') {
+                throw new InvalidArgumentException('Supplier name is required.');
+            }
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Enter a valid supplier email address.');
+            }
 
             $stmt = $pdo->prepare("
                 INSERT INTO suppliers (name, contact_person, phone, email, address, payment_terms, balance_due) 
@@ -45,14 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt->execute([$name, $contact, $phone, $email, $address, $terms, $balance]);
             $msg = "Supplier \"$name\" added successfully!";
         } catch (Exception $e) {
-            try {
-                $stmt = $pdo->prepare("INSERT INTO suppliers (name, contact_person, phone, email, address) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$name, $contact, $phone, $email, $address]);
-                $msg = "Supplier \"$name\" added successfully!";
-            } catch (Exception $e2) {
-                $msg = "Error adding supplier: " . $e2->getMessage();
-                $msg_type = 'error';
-            }
+            $msg = 'Error adding supplier: ' . safe_error_message($e);
+            $msg_type = 'error';
         }
     }
 
@@ -65,7 +50,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $email = trim($_POST['email'] ?? '');
             $address = trim($_POST['address'] ?? '');
             $terms = trim($_POST['payment_terms'] ?? 'Net 30');
-            $balance = (float)($_POST['balance_due'] ?? 0);
+            $balance = max(0, (float)($_POST['balance_due'] ?? 0));
+
+            if ($name === '') {
+                throw new InvalidArgumentException('Supplier name is required.');
+            }
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw new InvalidArgumentException('Enter a valid supplier email address.');
+            }
 
             $stmt = $pdo->prepare("UPDATE suppliers SET name=?, contact_person=?, phone=?, email=?, address=?, payment_terms=?, balance_due=? WHERE id=?");
             $stmt->execute([$name, $contact, $phone, $email, $address, $terms, $balance, $id]);
@@ -89,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt->execute([$id]);
             $msg = "Supplier deleted successfully.";
         } catch (Exception $e) {
-            $msg = "Error deleting supplier: " . $e->getMessage();
+            $msg = "Error deleting supplier: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -119,42 +111,6 @@ if ($pdo) {
     } catch (Exception $e) {}
 }
 
-if (empty($suppliers) && !$pdo) {
-    $suppliers = [
-        [
-            'id' => 1,
-            'name' => 'Tech Distro Inc.',
-            'contact_person' => 'John Smith',
-            'phone' => '+94 77 889 9001',
-            'email' => 'john@techdistro.com',
-            'address' => '45 Logistics Park, Colombo',
-            'payment_terms' => 'Net 30',
-            'balance_due' => 2450.00,
-            'total_purchases' => 8,
-            'total_purchase_volume' => 14200.00,
-            'category' => 'Hardware',
-            'on_time_rate' => 98,
-            'status' => 'Active'
-        ],
-        [
-            'id' => 2,
-            'name' => 'Global Hardware Direct',
-            'contact_person' => 'Jane Doe',
-            'phone' => '+94 71 223 3445',
-            'email' => 'orders@globalhw.com',
-            'address' => '78 Import Terminal, Colombo Port',
-            'payment_terms' => 'Net 15',
-            'balance_due' => 850.00,
-            'total_purchases' => 5,
-            'total_purchase_volume' => 8900.00,
-            'category' => 'Spare Parts',
-            'on_time_rate' => 92,
-            'status' => 'Active'
-        ]
-    ];
-    $total_ap = 3300.00;
-    $total_pos = 13;
-}
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto">
@@ -315,6 +271,7 @@ if (empty($suppliers) && !$pdo) {
                                 <button onclick="openSupplierModal('edit', <?php echo htmlspecialchars(json_encode($s)); ?>)" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                 </button>
+                                <?php if (in_array($role, ['Admin', 'Manager'], true)): ?>
                                 <form method="POST" action="suppliers.php" onsubmit="return confirm('Delete supplier <?php echo addslashes($supp_name); ?>?');" class="inline">
                                     <input type="hidden" name="action" value="delete_supplier">
                                     <input type="hidden" name="id" value="<?php echo $s['id'] ?? ''; ?>">
@@ -322,6 +279,7 @@ if (empty($suppliers) && !$pdo) {
                                         <i class="fa-solid fa-trash"></i>
                                     </button>
                                 </form>
+                                <?php endif; ?>
                             </div>
                         </td>
 
@@ -447,3 +405,4 @@ function filterSuppliers() {
 </script>
 
 <?php require_once '../includes/footer.php'; ?>
+hp'; ?>

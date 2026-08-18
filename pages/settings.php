@@ -1,8 +1,6 @@
 <?php
 require_once '../includes/db.php';
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once '../includes/auth.php';
 
 // Revert User Impersonation Action
 if (isset($_GET['action']) && $_GET['action'] === 'revert_impersonate') {
@@ -23,37 +21,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'revert_impersonate') {
     }
 }
 
-// Universal Schema Self-Healing for Settings and SuperAdmin
-if ($pdo) {
-    try {
-        $pdo->exec("ALTER TABLE `users` MODIFY COLUMN `role` varchar(50) NOT NULL DEFAULT 'Cashier'");
-    } catch (Exception $e) {}
-
-    // Ensure SuperAdmin user exists in database
-    try {
-        $chk_sa = $pdo->prepare("SELECT id FROM users WHERE role = 'SuperAdmin' OR email = 'superadmin@example.com'");
-        $chk_sa->execute();
-        if (!$chk_sa->fetch()) {
-            $hash = password_hash('password', PASSWORD_BCRYPT);
-            $ins_sa = $pdo->prepare("INSERT INTO users (name, email, password, role, status) VALUES ('Software Engineer (SuperAdmin)', 'superadmin@example.com', ?, 'SuperAdmin', 1)");
-            $ins_sa->execute([$hash]);
-        }
-    } catch (Exception $e) {}
-
-    // Ensure system settings table
-    try {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS `settings` (
-                `setting_key` varchar(100) NOT NULL,
-                `setting_value` text,
-                `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-                `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (`setting_key`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        ");
-    } catch (Exception $e) {}
-}
-
+enforce_page_access('settings.php');
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? 'Cashier';
 
@@ -103,42 +71,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'download_backup' && $is_super
     header('Content-Disposition: attachment; filename="techshop_backup_' . date('Ymd_His') . '.sql"');
     header('Content-Length: ' . strlen($sql_dump));
     echo $sql_dump;
-    exit;
-}
-
-require_once '../includes/header.php';
-
-// If not SuperAdmin, show restricted access banner
-if (!$is_superadmin) {
-    ?>
-    <div class="max-w-4xl mx-auto p-8 mt-6 bg-white rounded-3xl shadow-card border border-slate-100/90 text-center space-y-4">
-        <div class="w-16 h-16 rounded-3xl bg-purple-50 text-purple-600 flex items-center justify-center text-2xl mx-auto shadow-sm">
-            <i class="fa-solid fa-code"></i>
-        </div>
-        <div>
-            <h2 class="text-xl font-bold text-slate-900">System Infrastructure Restricted to SuperAdmin</h2>
-            <p class="text-xs sm:text-sm text-slate-500 max-w-md mx-auto mt-1">
-                System configuration, database credentials, API integrations, and maintenance tools are managed exclusively by the <b>Software Engineer / System Maintainer (SuperAdmin)</b>.
-            </p>
-        </div>
-        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200/70 text-xs text-slate-600 max-w-lg mx-auto text-left space-y-2">
-            <div class="flex items-center gap-2 font-bold text-slate-800">
-                <i class="fa-solid fa-shield-halved text-purple-600"></i> Role Separation of Concerns:
-            </div>
-            <p>• <b>Shop Owner / Admin:</b> Manages business operations in <a href="shop_settings.php" class="text-emerald-600 font-bold underline">Shop Settings</a> (sales, pricing, inventory, staff accounts).</p>
-            <p>• <b>SuperAdmin (Engineer):</b> Controls system infrastructure (database, API gateways, backups, error logs, currency & language registries).</p>
-        </div>
-        <div class="pt-2 flex items-center justify-center gap-3">
-            <a href="shop_settings.php" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all inline-flex items-center gap-2">
-                <i class="fa-solid fa-store"></i> Open Shop Settings
-            </a>
-            <a href="dashboard.php" class="px-5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all inline-flex items-center gap-2">
-                <i class="fa-solid fa-arrow-left"></i> Return to Dashboard
-            </a>
-        </div>
-    </div>
-    <?php
-    require_once '../includes/footer.php';
     exit;
 }
 
@@ -207,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "System configurations & feature flags updated successfully!";
         } catch (Exception $e) {
-            $msg = "Error updating settings: " . $e->getMessage();
+            $msg = "Error updating settings: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -253,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Currency $code successfully registered in System Master!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -274,7 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Currency $code deleted successfully from System Master!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -295,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Currency $code status toggled successfully!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -337,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Language $name ($code) successfully registered in System Master!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -358,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Language $code deleted successfully from System Master!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -379,7 +311,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Language $code status toggled successfully!";
         } catch (Exception $e) {
-            $msg = $e->getMessage();
+            $msg = safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -408,7 +340,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception("Target user not found.");
             }
         } catch (Exception $e) {
-            $msg = "Error impersonating user: " . $e->getMessage();
+            $msg = "Error impersonating user: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -425,7 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "Password force reset completed for User ID #$target_id!";
         } catch (Exception $e) {
-            $msg = "Error resetting password: " . $e->getMessage();
+            $msg = "Error resetting password: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -440,7 +372,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $msg = "All other staff sessions have been successfully terminated!";
         } catch (Exception $e) {
-            $msg = "Error resetting sessions: " . $e->getMessage();
+            $msg = "Error resetting sessions: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -450,8 +382,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         try {
             require_once '../setup_full_system.php';
             $msg = "Database schema migration executed! All tables, columns, and indexes verified.";
-        } catch (Exception $e) {
-            $msg = "Migration notice: " . $e->getMessage();
+        } catch (Throwable $e) {
+            $msg = "Migration notice: " . safe_error_message($e);
+            $msg_type = 'error';
         }
     }
 
@@ -462,9 +395,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception("Please select a valid SQL backup file (.sql).");
             }
 
-            $file_tmp = $_FILES['sql_file']['tmp_name'];
+            $upload = $_FILES['sql_file'];
+            if (($upload['size'] ?? 0) < 1 || $upload['size'] > 25 * 1024 * 1024) {
+                throw new InvalidArgumentException('The SQL backup must be between 1 byte and 25 MB.');
+            }
+            if (strtolower(pathinfo($upload['name'] ?? '', PATHINFO_EXTENSION)) !== 'sql') {
+                throw new InvalidArgumentException('Only .sql backup files are accepted.');
+            }
+
+            $file_tmp = $upload['tmp_name'];
             $sql_content = file_get_contents($file_tmp);
-            if (empty($sql_content)) {
+            if ($sql_content === false || trim($sql_content) === '') {
                 throw new Exception("The uploaded SQL file is empty.");
             }
 
@@ -475,7 +416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $msg = "Database successfully restored from SQL backup file!";
         } catch (Exception $e) {
             $pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
-            $msg = "Error restoring database: " . $e->getMessage();
+            $msg = "Error restoring database: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -494,7 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pdo->exec("TRUNCATE TABLE activity_logs");
             $msg = "All system activity logs and audit logs purged successfully!";
         } catch (Exception $e) {
-            $msg = "Error clearing logs: " . $e->getMessage();
+            $msg = "Error clearing logs: " . safe_error_message($e);
             $msg_type = 'error';
         }
     }
@@ -521,6 +462,8 @@ if ($pdo) {
 
 // Active Tab
 $tab = $_GET['tab'] ?? 'system';
+
+require_once '../includes/header.php';
 ?>
 
 <div class="space-y-6 max-w-7xl mx-auto pb-12">

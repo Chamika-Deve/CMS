@@ -32,30 +32,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         
         $stmt = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
         
+        $allowed_settings = [
+            'shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_number',
+            'currency_symbol', 'tax_rate', 'receipt_printer_width',
+            'return_policy_days', 'bill_footer_message', 'shop_language',
+        ];
         if (isset($_POST['settings']) && is_array($_POST['settings'])) {
             foreach ($_POST['settings'] as $key => $value) {
-                $stmt->execute([$key, trim($value)]);
+                if (!in_array($key, $allowed_settings, true) || !is_scalar($value)) {
+                    continue;
+                }
+                $value = trim((string)$value);
+                if ($key === 'tax_rate') $value = (string)max(0, min(100, (float)$value));
+                if ($key === 'return_policy_days') $value = (string)max(0, min(365, (int)$value));
+                if ($key === 'receipt_printer_width' && !in_array($value, ['58mm', '80mm', 'A4'], true)) $value = '80mm';
+                if ($key === 'shop_email' && $value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                    throw new InvalidArgumentException('Enter a valid shop email address.');
+                }
+                if ($key === 'shop_language' && !preg_match('/^[a-z]{2,5}$/', $value)) $value = 'en';
+                $stmt->execute([$key, $value]);
             }
         }
 
-        // Handle Logo Upload
+        // Handle Logo Upload (validated image formats only; SVG is excluded).
         if (isset($_FILES['shop_logo']) && $_FILES['shop_logo']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../uploads/logo/';
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
+            $upload = $_FILES['shop_logo'];
+            if (($upload['size'] ?? 0) < 1 || $upload['size'] > 2 * 1024 * 1024) {
+                throw new InvalidArgumentException('The logo must be a non-empty image smaller than 2 MB.');
             }
-            
-            $file_ext = strtolower(pathinfo($_FILES['shop_logo']['name'], PATHINFO_EXTENSION));
-            $allowed_exts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
-            
-            if (in_array($file_ext, $allowed_exts)) {
-                $new_filename = 'logo_' . time() . '.' . $file_ext;
-                $destination = $upload_dir . $new_filename;
-                
-                if (move_uploaded_file($_FILES['shop_logo']['tmp_name'], $destination)) {
-                    $stmt->execute(['shop_logo', $new_filename]);
-                }
+
+            $allowed_mimes = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/gif' => 'gif',
+                'image/webp' => 'webp',
+            ];
+            $mime = (new finfo(FILEINFO_MIME_TYPE))->file($upload['tmp_name']);
+            if (!isset($allowed_mimes[$mime]) || @getimagesize($upload['tmp_name']) === false) {
+                throw new InvalidArgumentException('Upload a valid JPG, PNG, GIF, or WebP logo.');
             }
+
+            $upload_dir = __DIR__ . '/../uploads/logo/';
+            if (!is_dir($upload_dir) && !mkdir($upload_dir, 0755, true) && !is_dir($upload_dir)) {
+                throw new RuntimeException('The logo upload directory could not be created.');
+            }
+
+            $new_filename = 'logo_' . bin2hex(random_bytes(12)) . '.' . $allowed_mimes[$mime];
+            $destination = $upload_dir . $new_filename;
+            if (!move_uploaded_file($upload['tmp_name'], $destination)) {
+                throw new RuntimeException('The logo could not be saved.');
+            }
+            chmod($destination, 0644);
+            $stmt->execute(['shop_logo', $new_filename]);
         }
         
         $pdo->commit();
@@ -67,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $success_msg = 'Shop business preferences & receipt template updated successfully!';
     } catch (\Exception $e) {
         $pdo->rollBack();
-        $error_msg = 'Error updating settings: ' . $e->getMessage();
+        $error_msg = 'Error updating settings: ' . safe_error_message($e);
     }
 }
 
