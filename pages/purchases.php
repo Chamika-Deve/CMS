@@ -7,6 +7,7 @@ $user = $_SESSION['user'];
 $role = $user['role'] ?? 'Cashier';
 $msg = '';
 $msg_type = 'success';
+$currency_symbol = 'Rs.'; // Default; overwritten by settings fetch below
 
 // AJAX Handlers
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
@@ -478,6 +479,15 @@ if ($pdo) {
 
         $stmt_ap = $pdo->query("SELECT COALESCE(SUM(balance_due), 0) FROM suppliers");
         $total_ap_due = (float)$stmt_ap->fetchColumn();
+
+        // Fetch currency symbol from settings
+        try {
+            $stmt_curr = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'currency_symbol' LIMIT 1");
+            $curr_val = $stmt_curr->fetchColumn();
+            if ($curr_val !== false && $curr_val !== '') {
+                $currency_symbol = $curr_val;
+            }
+        } catch (Exception $e_curr) {}
 
         // Fetch Returns
         $stmt_ret_list = $pdo->query("
@@ -1000,14 +1010,19 @@ if ($pdo) {
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Supplier *</label>
-                    <select name="supplier_id" id="poSupplier" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                    <select name="supplier_id" id="poSupplier" required class="w-full px-4 py-2.5 bg-white border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" style="color:#1e293b;background-color:#fff;">
+                        <option value="" disabled selected>-- Select Supplier --</option>
+                        <?php if (empty($suppliers)): ?>
+                            <option value="" disabled>No suppliers found. Add a supplier first.</option>
+                        <?php else: ?>
                         <?php foreach ($suppliers as $sp): 
                             $sp_id = $sp['id'] ?? 1;
                             $sp_name = $sp['name'] ?? 'Supplier';
                             $sp_terms = $sp['payment_terms'] ?? 'Net 30';
                         ?>
-                            <option value="<?php echo $sp_id; ?>"><?php echo htmlspecialchars($sp_name . ' (' . $sp_terms . ')'); ?></option>
+                            <option value="<?php echo $sp_id; ?>" style="color:#1e293b;background:#fff;"><?php echo htmlspecialchars($sp_name . ' (' . $sp_terms . ')'); ?></option>
                         <?php endforeach; ?>
+                        <?php endif; ?>
                     </select>
                 </div>
 
