@@ -32,7 +32,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $allowed_keys = [
         'maintenance_mode', 'maintenance_message',
         'shop_disabled', 'shop_disabled_message',
-        'feature_multibranch', 'feature_custom_pc',
+        'feature_multibranch', 'feature_repairs', 'feature_custom_pc',
         'feature_serials', 'feature_rma',
         'feature_accounting', 'feature_tracker', 'app_debug'
     ];

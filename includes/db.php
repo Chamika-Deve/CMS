@@ -27,10 +27,21 @@ $db_error = null;
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (PDOException $exception) {
-    // Keep pages renderable, but never expose credentials/server details unless
-    // debug mode was explicitly enabled in the environment.
-    $debug = filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL);
-    $db_error = $debug
-        ? $exception->getMessage()
-        : 'Unable to connect to the database. Verify that MySQL is running and the DB_* settings are correct.';
+    if (getenv('DB_PASS') === false && $pass !== '') {
+        try {
+            $pdo = new PDO("mysql:host={$host};port={$port};dbname={$db};charset={$charset}", $user, '', $options);
+            $db_error = null;
+        } catch (PDOException $fallbackException) {
+            $debug = filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL);
+            $db_error = $debug
+                ? $exception->getMessage()
+                : 'Unable to connect to the database. Verify that MySQL is running and the DB_* settings are correct.';
+        }
+    } else {
+        $debug = filter_var(getenv('APP_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL);
+        $db_error = $debug
+            ? $exception->getMessage()
+            : 'Unable to connect to the database. Verify that MySQL is running and the DB_* settings are correct.';
+    }
 }
+

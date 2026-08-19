@@ -115,6 +115,53 @@ if (!function_exists('abort_request')) {
     }
 }
 
+if (!function_exists('is_flag_enabled')) {
+    function is_flag_enabled(string $key, int $default = 1): bool
+    {
+        global $pdo;
+        static $flags_cache = null;
+
+        if ($flags_cache === null) {
+            $flags_cache = [];
+            if (isset($pdo) && $pdo instanceof PDO) {
+                try {
+                    $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'feature_%' OR setting_key IN ('maintenance_mode', 'shop_disabled')");
+                    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                        $flags_cache[$row['setting_key']] = ($row['setting_value'] === '1' || $row['setting_value'] === 'true');
+                    }
+                } catch (Throwable $e) {}
+            }
+        }
+
+        if (isset($flags_cache[$key])) {
+            return (bool)$flags_cache[$key];
+        }
+
+        return $default === 1;
+    }
+}
+
+if (!function_exists('is_module_feature_enabled')) {
+    function is_module_feature_enabled(string $page): bool
+    {
+        $page_flag_map = [
+            'repairs.php'         => 'feature_repairs',
+            'build_pc.php'        => 'feature_custom_pc',
+            'warranty.php'        => 'feature_rma',
+            'accounting.php'      => 'feature_accounting',
+            'product_serials.php' => 'feature_serials',
+            'track.php'           => 'feature_tracker',
+        ];
+
+        $flag = $page_flag_map[$page] ?? null;
+        if ($flag && !is_flag_enabled($flag, 1)) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('get_page_access_level')) {
     function get_page_access_level(string $page, string $role): string
     {
@@ -139,11 +186,6 @@ if (!function_exists('get_page_access_level')) {
             'purchases.php'       => 'Suppliers & Purchasing (POs/GRN)',
             'suppliers.php'       => 'Suppliers & Purchasing (POs/GRN)',
             'accounting.php'      => 'Accounting, Expenses & Cash Drawer',
-            'users.php'           => 'User Impersonation & Security Override',
-            'audit_log.php'       => 'User Impersonation & Security Override',
-            'shop_settings.php'   => 'System Infrastructure & APIs',
-            'settings.php'        => 'Database Backups & Schema Migrations',
-            'api_status.php'      => 'System Infrastructure & APIs',
         ];
 
         $module = $page_module_map[$page] ?? null;
@@ -176,7 +218,6 @@ if (!function_exists('get_page_access_level')) {
             'Repair & Service Jobs Workbench'    => ['Admin'=>'F', 'Manager'=>'F', 'Technician'=>'E', 'Cashier'=>'V', 'Accountant'=>'V'],
             'Suppliers & Purchasing (POs/GRN)'   => ['Admin'=>'F', 'Inventory'=>'F', 'Manager'=>'E', 'Accountant'=>'V'],
             'Accounting, Expenses & Cash Drawer' => ['Admin'=>'F', 'Accountant'=>'F', 'Manager'=>'V', 'Cashier'=>'E'],
-            'User Impersonation & Security Override' => ['Admin'=>'F', 'Manager'=>'F'],
         ];
 
         return $defaults[$module][$role] ?? '-';
@@ -186,6 +227,10 @@ if (!function_exists('get_page_access_level')) {
 if (!function_exists('can_access_page')) {
     function can_access_page(string $page): bool
     {
+        if (!is_module_feature_enabled($page)) {
+            return false;
+        }
+
         $role = $_SESSION['user']['role'] ?? '';
         if ($role === '') {
             return false;
@@ -197,6 +242,26 @@ if (!function_exists('can_access_page')) {
         return get_page_access_level($page, $role) !== '-';
     }
 }
+
+if (!function_exists('can_write_page')) {
+    function can_write_page(string $page): bool
+    {
+        if (!is_module_feature_enabled($page)) {
+            return false;
+        }
+
+        $role = $_SESSION['user']['role'] ?? '';
+        if ($role === '' || empty($_SESSION['user'])) {
+            return false;
+        }
+        if ($role === 'SuperAdmin') {
+            return true;
+        }
+        $level = get_page_access_level($page, $role);
+        return $level === 'F' || $level === 'E';
+    }
+}
+
 
 if (!function_exists('enforce_page_access')) {
     function enforce_page_access(?string $page = null): void
@@ -256,6 +321,10 @@ if (!function_exists('enforce_page_access')) {
             } catch (Throwable $ignored) {
                 // Keep the existing session usable during a temporary database outage
             }
+        }
+
+        if (!is_module_feature_enabled($page)) {
+            abort_request(403, 'This feature module is currently disabled for this shop by the administrator.', $isJson);
         }
 
         $role = $_SESSION['user']['role'] ?? '';

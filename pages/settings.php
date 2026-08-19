@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             // Feature flags toggles
-            $flags = ['feature_multibranch', 'feature_custom_pc', 'feature_serials', 'feature_rma', 'feature_accounting', 'feature_tracker', 'maintenance_mode', 'shop_disabled', 'app_debug'];
+            $flags = ['feature_multibranch', 'feature_repairs', 'feature_custom_pc', 'feature_serials', 'feature_rma', 'feature_accounting', 'feature_tracker', 'maintenance_mode', 'shop_disabled', 'app_debug'];
             foreach ($flags as $flg) {
                 $val = isset($_POST['settings'][$flg]) ? '1' : '0';
                 $stmt->execute([$flg, $val]);
@@ -669,6 +669,10 @@ require_once '../includes/header.php';
                     <p class="text-xs text-slate-400">Toggling any switch instantly updates the system without page reload.</p>
 
                     <div class="space-y-3 pt-2">
+                        <label class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/70 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                            <span class="text-xs font-bold text-slate-800">Repair & Service Jobs Workbench</span>
+                            <input type="checkbox" name="settings[feature_repairs]" value="1" <?php echo is_flag_enabled('feature_repairs', 1) ? 'checked' : ''; ?> onchange="quickLiveToggle('feature_repairs', this.checked, this)" class="w-4 h-4 text-purple-600 rounded">
+                        </label>
                         <label class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/70 cursor-pointer hover:bg-slate-100/70 transition-colors">
                             <span class="text-xs font-bold text-slate-800">Hardware Serial/IMEI Tracking</span>
                             <input type="checkbox" name="settings[feature_serials]" value="1" <?php echo is_flag_enabled('feature_serials', 1) ? 'checked' : ''; ?> onchange="quickLiveToggle('feature_serials', this.checked, this)" class="w-4 h-4 text-purple-600 rounded">

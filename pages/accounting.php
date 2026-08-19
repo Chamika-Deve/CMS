@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $stmt = $pdo->prepare("INSERT INTO cash_registers (user_id, opening_time, opening_cash, status) VALUES (?, NOW(), ?, 'Open')");
             $stmt->execute([$user['id'], $opening_cash]);
-            $msg = "Cash drawer opened with starting float of $ " . number_format($opening_cash, 2);
+            $msg = "Cash drawer opened with starting float of " . htmlspecialchars($currency_symbol) . " " . number_format($opening_cash, 2);
         } catch (Exception $e) {
             $msg = "Error opening drawer: " . safe_error_message($e);
             $msg_type = 'error';
@@ -74,7 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($stmt->rowCount() !== 1) {
                 throw new RuntimeException('This cash drawer is already closed or does not exist.');
             }
-            $msg = "Cash drawer reconciled and closed. Difference: $ " . number_format($diff, 2);
+            $msg = "Cash drawer reconciled and closed. Difference: " . htmlspecialchars($currency_symbol) . " " . number_format($diff, 2);
+
         } catch (Exception $e) {
             $msg = "Error closing drawer: " . safe_error_message($e);
             $msg_type = 'error';

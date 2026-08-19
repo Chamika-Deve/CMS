@@ -4,15 +4,12 @@ require_once '../includes/header.php';
 
 // ── role_permissions table + seed ────────────────────────────────────────────
 $matrix_modules = [
-    'System Infrastructure & APIs'             => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
-    'Database Backups & Schema Migrations'     => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
-    'User Impersonation & Security Override'   => ['SuperAdmin'=>'F','Admin'=>'-','Manager'=>'-','Cashier'=>'-','Technician'=>'-','Inventory'=>'-','Accountant'=>'-'],
-    'Dashboard / Business KPIs'                => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'-','Inventory'=>'V','Accountant'=>'V'],
-    'POS / Sales & Barcode Scanning'           => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'V'],
-    'Products / Inventory & Serials'           => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'V','Inventory'=>'F','Accountant'=>'V'],
-    'Repair & Service Jobs Workbench'          => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'E','Inventory'=>'-','Accountant'=>'V'],
-    'Suppliers & Purchasing (POs/GRN)'         => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'E','Cashier'=>'-','Technician'=>'-','Inventory'=>'F','Accountant'=>'V'],
-    'Accounting, Expenses & Cash Drawer'       => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'V','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'F'],
+    'Dashboard / Business KPIs'          => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'-','Inventory'=>'V','Accountant'=>'V'],
+    'POS / Sales & Barcode Scanning'     => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'V'],
+    'Products / Inventory & Serials'     => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'V','Inventory'=>'F','Accountant'=>'V'],
+    'Repair & Service Jobs Workbench'    => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'F','Cashier'=>'V','Technician'=>'E','Inventory'=>'-','Accountant'=>'V'],
+    'Suppliers & Purchasing (POs/GRN)'   => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'E','Cashier'=>'-','Technician'=>'-','Inventory'=>'F','Accountant'=>'V'],
+    'Accounting, Expenses & Cash Drawer' => ['SuperAdmin'=>'F','Admin'=>'F','Manager'=>'V','Cashier'=>'E','Technician'=>'-','Inventory'=>'-','Accountant'=>'F'],
 ];
 $matrix_roles = ['SuperAdmin','Admin','Manager','Cashier','Technician','Inventory','Accountant'];
 
@@ -326,33 +323,25 @@ if (!$can_manage_users) {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <?php
-                    $superadmin_only_mods = [
-                        'System Infrastructure & APIs',
-                        'Database Backups & Schema Migrations',
-                        'User Impersonation & Security Override',
+                    $module_flag_map = [
+                        'Repair & Service Jobs Workbench'    => 'feature_repairs',
+                        'Accounting, Expenses & Cash Drawer' => 'feature_accounting',
                     ];
                     foreach ($matrix_modules as $mod_name => $mod_perms):
-                        $is_superonly = in_array($mod_name, $superadmin_only_mods, true);
-                        if ($role !== 'SuperAdmin' && $is_superonly) {
-                            continue; // Hide SuperAdmin-only rows completely from Admin and other staff
+                        $flag = $module_flag_map[$mod_name] ?? null;
+                        if ($flag && !is_flag_enabled($flag, 1)) {
+                            continue; // Skip feature modules turned OFF by SuperAdmin
                         }
                         $mod_key = urlencode($mod_name);
                     ?>
-                    <tr class="hover:bg-slate-50/50 transition-colors <?php echo $is_superonly ? 'bg-purple-50/20' : ''; ?>">
+                    <tr class="hover:bg-slate-50/50 transition-colors">
                         <td class="py-3 px-4 font-semibold text-slate-800 text-[12px]">
-                            <?php if ($is_superonly): ?>
-                                <span class="inline-flex items-center gap-1.5 text-purple-800 font-bold">
-                                    <i class="fa-solid fa-lock text-purple-300 text-[10px]"></i>
-                                    <?php echo htmlspecialchars($mod_name); ?>
-                                </span>
-                            <?php else: ?>
-                                <?php echo htmlspecialchars($mod_name); ?>
-                            <?php endif; ?>
+                            <?php echo htmlspecialchars($mod_name); ?>
                         </td>
                         <?php foreach ($matrix_roles as $col_role):
                             $acc = $mod_perms[$col_role] ?? '-';
                             $is_purple_col = ($col_role === 'SuperAdmin');
-                            $is_locked = $is_purple_col || $is_superonly;
+                            $is_locked = $is_purple_col;
                         ?>
                         <td class="py-3 px-3 text-center <?php echo $is_purple_col ? 'bg-purple-50/30' : ''; ?>">
                             <?php if ($role === 'SuperAdmin' && !$is_locked): ?>

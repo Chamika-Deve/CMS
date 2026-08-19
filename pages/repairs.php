@@ -28,9 +28,12 @@ if ($pdo) {
     $addCol('is_quote_approved',    "tinyint(1) NOT NULL DEFAULT 0");
     $addCol('public_token',         "varchar(80) DEFAULT NULL");
 
-    // Fix legacy device_name column — must have a default so new INSERTs (which omit it) don't fail
+    // Fix legacy device_name column if present on older database installations
     try {
-        $pdo->exec("ALTER TABLE `repair_jobs` MODIFY COLUMN `device_name` varchar(255) NOT NULL DEFAULT ''");
+        $chkName = $pdo->query("SHOW COLUMNS FROM `repair_jobs` LIKE 'device_name'");
+        if ($chkName->fetch()) {
+            $pdo->exec("ALTER TABLE `repair_jobs` MODIFY COLUMN `device_name` varchar(255) NOT NULL DEFAULT ''");
+        }
     } catch (Exception $e) {}
 
     // Status ENUM — modify to include all used values
@@ -43,6 +46,7 @@ if ($pdo) {
         $pdo->exec("ALTER TABLE `repair_jobs` ADD UNIQUE KEY `uq_ticket_no` (`ticket_no`)");
     } catch (Exception $e) {}
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Handle POST actions for repairs
