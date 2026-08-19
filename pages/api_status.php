@@ -34,7 +34,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         'shop_disabled', 'shop_disabled_message',
         'feature_multibranch', 'feature_repairs', 'feature_custom_pc',
         'feature_serials', 'feature_rma',
-        'feature_accounting', 'feature_tracker', 'app_debug'
+        'feature_accounting', 'feature_tracker', 'superadmin_shop_access', 'app_debug'
     ];
 
     if (!in_array($key, $allowed_keys, true)) {

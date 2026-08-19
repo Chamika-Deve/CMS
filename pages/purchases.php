@@ -1044,7 +1044,7 @@ if ($pdo) {
                                 $pr_cost = (float)($pr['cost_price'] ?? 0);
                             ?>
                                 <option value="<?php echo $pr_id; ?>" data-name="<?php echo htmlspecialchars($pr_name); ?>" data-cost="<?php echo $pr_cost; ?>">
-                                    <?php echo htmlspecialchars($pr_name . ' ($' . number_format($pr_cost, 2) . ')'); ?>
+                                    <?php echo htmlspecialchars($pr_name . ' (' . $currency_symbol . ' ' . number_format($pr_cost, 2) . ')'); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -1085,7 +1085,7 @@ if ($pdo) {
                 <!-- Financial adjustments -->
                 <div class="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-200/80">
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Shipping / Freight ($)</label>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Shipping / Freight (<?php echo htmlspecialchars($currency_symbol); ?>)</label>
                         <input type="number" step="0.01" name="shipping_cost" id="poShippingCost" value="0.00" oninput="recalcPOTotal()" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
                     </div>
                     <div>
@@ -1248,8 +1248,8 @@ function renderLineItems() {
                 <tr>
                     <td class="p-2 font-bold text-slate-800">${item.name}</td>
                     <td class="p-2 text-center font-bold">${item.qty}</td>
-                    <td class="p-2 text-right">$ ${item.cost.toFixed(2)}</td>
-                    <td class="p-2 text-right font-extrabold text-emerald-700">$ ${sub.toFixed(2)}</td>
+                    <td class="p-2 text-right">${window.CURRENCY_SYMBOL || 'Rs.'} ${item.cost.toFixed(2)}</td>
+                    <td class="p-2 text-right font-extrabold text-emerald-700">${window.CURRENCY_SYMBOL || 'Rs.'} ${sub.toFixed(2)}</td>
                     <td class="p-2 text-center">
                         <button type="button" onclick="removeLineItem(${i})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
                     </td>
@@ -1304,8 +1304,8 @@ function viewPODetails(poId) {
                             <td class="p-2.5 text-center font-bold">${ord}</td>
                             <td class="p-2.5 text-center font-bold text-emerald-600">${rec}</td>
                             <td class="p-2.5 text-center font-bold ${rem > 0 ? 'text-amber-600' : 'text-slate-400'}">${rem}</td>
-                            <td class="p-2.5 text-right">$ ${parseFloat(it.unit_cost || 0).toFixed(2)}</td>
-                            <td class="p-2.5 text-right font-bold text-slate-900">$ ${sub.toFixed(2)}</td>
+                            <td class="p-2.5 text-right">${window.CURRENCY_SYMBOL || 'Rs.'} ${parseFloat(it.unit_cost || 0).toFixed(2)}</td>
+                            <td class="p-2.5 text-right font-bold text-slate-900">${window.CURRENCY_SYMBOL || 'Rs.'} ${sub.toFixed(2)}</td>
                         </tr>
                     `;
                 });

@@ -125,7 +125,7 @@ if (!function_exists('is_flag_enabled')) {
             $flags_cache = [];
             if (isset($pdo) && $pdo instanceof PDO) {
                 try {
-                    $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'feature_%' OR setting_key IN ('maintenance_mode', 'shop_disabled')");
+                    $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'feature_%' OR setting_key IN ('maintenance_mode', 'shop_disabled', 'superadmin_shop_access')");
                     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                         $flags_cache[$row['setting_key']] = ($row['setting_value'] === '1' || $row['setting_value'] === 'true');
                     }
@@ -138,6 +138,19 @@ if (!function_exists('is_flag_enabled')) {
         }
 
         return $default === 1;
+    }
+}
+
+if (!function_exists('is_superadmin_shop_page')) {
+    function is_superadmin_shop_page(string $page): bool
+    {
+        $shop_pages = [
+            'pos.php', 'products.php', 'product_add.php', 'product_edit.php',
+            'product_serials.php', 'repairs.php', 'purchases.php', 'suppliers.php',
+            'customers.php', 'accounting.php', 'reports.php', 'warranty.php',
+            'build_pc.php', 'print_bill.php', 'print_quote.php'
+        ];
+        return in_array($page, $shop_pages, true);
     }
 }
 
@@ -235,6 +248,12 @@ if (!function_exists('can_access_page')) {
         if ($role === '') {
             return false;
         }
+
+        // SuperAdmin shop page visibility depends on superadmin_shop_access setting
+        if ($role === 'SuperAdmin' && is_superadmin_shop_page($page)) {
+            return is_flag_enabled('superadmin_shop_access', 0);
+        }
+
         // users.php tab=matrix is accessible to all logged in users for viewing matrix
         if ($page === 'users.php') {
             return true;
@@ -255,6 +274,9 @@ if (!function_exists('can_write_page')) {
             return false;
         }
         if ($role === 'SuperAdmin') {
+            if (is_superadmin_shop_page($page)) {
+                return is_flag_enabled('superadmin_shop_access', 0);
+            }
             return true;
         }
         $level = get_page_access_level($page, $role);
@@ -328,6 +350,13 @@ if (!function_exists('enforce_page_access')) {
         }
 
         $role = $_SESSION['user']['role'] ?? '';
+
+        if ($role === 'SuperAdmin' && is_superadmin_shop_page($page)) {
+            if (!is_flag_enabled('superadmin_shop_access', 0)) {
+                abort_request(403, 'SuperAdmin shop access is currently disabled. Enable "SuperAdmin Shop Access (Support / Debug Mode)" in System Settings to troubleshoot shop modules.', $isJson);
+            }
+        }
+
         $accessLevel = get_page_access_level($page, $role);
 
         // Allow users.php for viewing matrix

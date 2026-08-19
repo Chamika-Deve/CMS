@@ -693,6 +693,17 @@ if (empty($initials)) $initials = 'U';
         </div>
         <?php endif; ?>
 
+        <?php if ($role === 'SuperAdmin' && is_flag_enabled('superadmin_shop_access', 0)): ?>
+        <div class="bg-purple-900 text-white px-6 py-1.5 flex items-center justify-between shadow-md z-30 shrink-0 text-xs font-semibold">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <i class="fa-solid fa-bug text-purple-300"></i>
+                <span><b>SuperAdmin Support Mode ACTIVE:</b> Full shop module access enabled for error handling &amp; debugging.</span>
+            </div>
+            <a href="settings.php" class="underline text-purple-200 hover:text-white font-bold">Disable Support Mode &rarr;</a>
+        </div>
+        <?php endif; ?>
+
         <?php if ($role === 'SuperAdmin' && $is_shop_locked): ?>
         <div class="bg-red-600 text-white px-6 py-2 flex items-center justify-between shadow-md z-30 shrink-0 text-xs font-bold">
             <div class="flex items-center gap-2">
