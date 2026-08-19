@@ -29,36 +29,60 @@ CREATE TABLE IF NOT EXISTS `activity_logs` (
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `module` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `ip_address` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `activity_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table csms_db.activity_logs: ~23 rows (approximately)
-INSERT INTO `activity_logs` (`id`, `user_id`, `action`, `table_name`, `record_id`, `timestamp`, `module`, `details`) VALUES
-	(1, NULL, 'Create PO PO-260816-560 ($ 6,000.00)', 'purchases', 3, '2026-08-16 11:13:18', NULL, NULL),
-	(2, NULL, 'Create PO', 'purchases', 6, '2026-08-16 11:24:13', 'Purchasing', 'Created PO-260816-562 for Total: $ 25,200.00'),
-	(4, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:28:43', 'System', 'SuperAdmin live toggled maintenance_mode to 0'),
-	(5, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:29:05', 'System', 'SuperAdmin live toggled shop_disabled to 1'),
-	(6, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:45:53', 'System', 'SuperAdmin live toggled shop_disabled to 0'),
-	(7, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 14:08:02', 'System', 'SuperAdmin live toggled shop_disabled to 1'),
-	(8, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 14:08:51', 'System', 'SuperAdmin live toggled shop_disabled to 0'),
-	(9, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:00:16', 'System', 'SuperAdmin live toggled shop_disabled to 1'),
-	(10, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:00:53', 'System', 'SuperAdmin live toggled shop_disabled to 0'),
-	(11, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:01:03', 'System', 'SuperAdmin live toggled maintenance_mode to 1'),
-	(12, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:01:22', 'System', 'SuperAdmin live toggled maintenance_mode to 0'),
-	(13, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:06:44', 'System', 'SuperAdmin live toggled maintenance_mode to 1'),
-	(14, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:06:53', 'System', 'SuperAdmin live toggled maintenance_mode to 0'),
-	(15, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:11', 'System', 'SuperAdmin live toggled shop_disabled_message to salli gewapan'),
-	(16, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:11', 'System', 'SuperAdmin live toggled shop_disabled to 1'),
-	(17, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:37', 'System', 'SuperAdmin live toggled shop_disabled to 0'),
-	(18, NULL, 'Create PO', 'purchases', 9, '2026-08-18 04:16:35', 'Purchasing', 'Created PO-260818-726 for Total:  12,000.00'),
-	(19, NULL, 'Create PO', 'purchases', 10, '2026-08-18 04:26:53', 'Purchasing', 'Created PO-260818-606 for Total:  5,000.00'),
-	(20, NULL, 'Create PO', 'purchases', 11, '2026-08-18 05:20:40', 'Purchasing', 'Created PO-260818-872 for Total:  1,000.00'),
-	(21, NULL, 'Create PO', 'purchases', 12, '2026-08-18 05:34:40', 'Purchasing', 'Created PO-260818-499 for Total:  1,000.00'),
-	(22, NULL, 'Create PO', 'purchases', 13, '2026-08-18 06:06:30', 'Purchasing', 'Created PO-260818-446 for Total: Rs. 1,000.00'),
-	(23, NULL, 'Create PO', 'purchases', 14, '2026-08-18 07:29:32', 'Purchasing', 'Created PO-260818-5088; total 6000'),
-	(24, NULL, 'Create Repair Ticket', 'repair_jobs', 2, '2026-08-18 08:38:00', 'Repairs', 'Created ticket RPR-260818-9DAC49EC for 8oo uo');
+-- Dumping data for table csms_db.activity_logs: ~46 rows (approximately)
+INSERT INTO `activity_logs` (`id`, `user_id`, `action`, `table_name`, `record_id`, `timestamp`, `module`, `details`, `ip_address`) VALUES
+	(1, NULL, 'Create PO PO-260816-560 ($ 6,000.00)', 'purchases', 3, '2026-08-16 11:13:18', NULL, NULL, NULL),
+	(2, NULL, 'Create PO', 'purchases', 6, '2026-08-16 11:24:13', 'Purchasing', 'Created PO-260816-562 for Total: $ 25,200.00', NULL),
+	(4, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:28:43', 'System', 'SuperAdmin live toggled maintenance_mode to 0', NULL),
+	(5, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:29:05', 'System', 'SuperAdmin live toggled shop_disabled to 1', NULL),
+	(6, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 13:45:53', 'System', 'SuperAdmin live toggled shop_disabled to 0', NULL),
+	(7, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 14:08:02', 'System', 'SuperAdmin live toggled shop_disabled to 1', NULL),
+	(8, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-16 14:08:51', 'System', 'SuperAdmin live toggled shop_disabled to 0', NULL),
+	(9, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:00:16', 'System', 'SuperAdmin live toggled shop_disabled to 1', NULL),
+	(10, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:00:53', 'System', 'SuperAdmin live toggled shop_disabled to 0', NULL),
+	(11, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:01:03', 'System', 'SuperAdmin live toggled maintenance_mode to 1', NULL),
+	(12, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-17 07:01:22', 'System', 'SuperAdmin live toggled maintenance_mode to 0', NULL),
+	(13, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:06:44', 'System', 'SuperAdmin live toggled maintenance_mode to 1', NULL),
+	(14, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:06:53', 'System', 'SuperAdmin live toggled maintenance_mode to 0', NULL),
+	(15, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:11', 'System', 'SuperAdmin live toggled shop_disabled_message to salli gewapan', NULL),
+	(16, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:11', 'System', 'SuperAdmin live toggled shop_disabled to 1', NULL),
+	(17, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-18 04:07:37', 'System', 'SuperAdmin live toggled shop_disabled to 0', NULL),
+	(18, NULL, 'Create PO', 'purchases', 9, '2026-08-18 04:16:35', 'Purchasing', 'Created PO-260818-726 for Total:  12,000.00', NULL),
+	(19, NULL, 'Create PO', 'purchases', 10, '2026-08-18 04:26:53', 'Purchasing', 'Created PO-260818-606 for Total:  5,000.00', NULL),
+	(20, NULL, 'Create PO', 'purchases', 11, '2026-08-18 05:20:40', 'Purchasing', 'Created PO-260818-872 for Total:  1,000.00', NULL),
+	(21, NULL, 'Create PO', 'purchases', 12, '2026-08-18 05:34:40', 'Purchasing', 'Created PO-260818-499 for Total:  1,000.00', NULL),
+	(22, NULL, 'Create PO', 'purchases', 13, '2026-08-18 06:06:30', 'Purchasing', 'Created PO-260818-446 for Total: Rs. 1,000.00', NULL),
+	(23, NULL, 'Create PO', 'purchases', 14, '2026-08-18 07:29:32', 'Purchasing', 'Created PO-260818-5088; total 6000', NULL),
+	(24, NULL, 'Create Repair Ticket', 'repair_jobs', 2, '2026-08-18 08:38:00', 'Repairs', 'Created ticket RPR-260818-9DAC49EC for 8oo uo', NULL),
+	(25, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:40:24', 'System', 'SuperAdmin live toggled feature_repairs to 0', NULL),
+	(26, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:40:38', 'System', 'SuperAdmin live toggled feature_repairs to 1', NULL),
+	(27, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:40:40', 'System', 'SuperAdmin live toggled feature_repairs to 0', NULL),
+	(28, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:40:42', 'System', 'SuperAdmin live toggled feature_repairs to 1', NULL),
+	(29, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:13', 'System', 'SuperAdmin live toggled feature_tracker to 0', NULL),
+	(30, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:14', 'System', 'SuperAdmin live toggled feature_accounting to 0', NULL),
+	(31, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:14', 'System', 'SuperAdmin live toggled feature_rma to 0', NULL),
+	(32, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:15', 'System', 'SuperAdmin live toggled feature_multibranch to 0', NULL),
+	(33, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:15', 'System', 'SuperAdmin live toggled feature_custom_pc to 0', NULL),
+	(34, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:16', 'System', 'SuperAdmin live toggled feature_serials to 0', NULL),
+	(35, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:16', 'System', 'SuperAdmin live toggled feature_repairs to 0', NULL),
+	(36, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:38', 'System', 'SuperAdmin live toggled feature_repairs to 1', NULL),
+	(37, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:39', 'System', 'SuperAdmin live toggled feature_serials to 1', NULL),
+	(38, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:39', 'System', 'SuperAdmin live toggled feature_custom_pc to 1', NULL),
+	(39, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:40', 'System', 'SuperAdmin live toggled feature_multibranch to 1', NULL),
+	(40, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:40', 'System', 'SuperAdmin live toggled feature_rma to 1', NULL),
+	(41, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:41', 'System', 'SuperAdmin live toggled feature_accounting to 1', NULL),
+	(42, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:41', 'System', 'SuperAdmin live toggled feature_tracker to 1', NULL),
+	(43, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 07:45:53', 'System', 'SuperAdmin live toggled feature_repairs to 0', NULL),
+	(44, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 08:48:39', 'System', 'SuperAdmin live toggled shop_disabled_message to The system is undergoing scheduled technical maintenance and upgrades. Please check back shortly.', NULL),
+	(45, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 08:48:47', 'System', 'SuperAdmin live toggled superadmin_shop_access to 1', NULL),
+	(46, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 08:49:00', 'System', 'SuperAdmin live toggled superadmin_shop_access to 0', NULL),
+	(47, 5, 'Live Setting Toggle', 'settings', NULL, '2026-08-19 08:49:07', 'System', 'SuperAdmin live toggled feature_repairs to 1', NULL);
 
 -- Dumping structure for table csms_db.brands
 CREATE TABLE IF NOT EXISTS `brands` (
@@ -76,6 +100,25 @@ INSERT INTO `brands` (`id`, `name`, `created_at`, `updated_at`) VALUES
 	(3, 'Asus', '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
 	(4, 'Intel', '2026-08-06 08:43:32', '2026-08-06 08:43:32'),
 	(5, 'Nvidia', '2026-08-06 08:43:32', '2026-08-06 08:43:32');
+
+-- Dumping structure for table csms_db.cash_registers
+CREATE TABLE IF NOT EXISTS `cash_registers` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint unsigned NOT NULL,
+  `opening_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `closing_time` datetime DEFAULT NULL,
+  `opening_cash` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `closing_cash_actual` decimal(10,2) DEFAULT NULL,
+  `closing_cash_system` decimal(10,2) DEFAULT NULL,
+  `cash_difference` decimal(10,2) DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Open',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dumping data for table csms_db.cash_registers: ~0 rows (approximately)
 
 -- Dumping structure for table csms_db.categories
 CREATE TABLE IF NOT EXISTS `categories` (
@@ -119,6 +162,23 @@ INSERT INTO `customers` (`id`, `name`, `phone`, `email`, `address`, `points`, `c
 	(1, 'Walk-in Customer', '00000000', 'walkin@example.com', 'N/A', 0, '2026-08-06 08:43:32', '2026-08-06 08:43:32', NULL, 'Individual', 0.00, 0.00),
 	(2, 'Alice Wonderland', '555-1234', 'alice@example.com', '123 Main St', 0, '2026-08-06 08:43:32', '2026-08-06 08:43:32', NULL, 'Individual', 0.00, 0.00),
 	(3, 'Chamika sandeepa', '0761042162', 'infor.chamika@gmail.com', 'Alaehala,kiribathawila,baddegama\r\nAlaehala,kiribathawila,baddegama', 0, '2026-08-18 04:39:19', '2026-08-18 04:39:19', '', 'Individual', 0.00, 0.00);
+
+-- Dumping structure for table csms_db.expenses
+CREATE TABLE IF NOT EXISTS `expenses` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `category` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'General',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `payment_method` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Cash',
+  `expense_date` date NOT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `receipt_file` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` bigint unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dumping data for table csms_db.expenses: ~0 rows (approximately)
 
 -- Dumping structure for table csms_db.product_bundles
 CREATE TABLE IF NOT EXISTS `product_bundles` (
@@ -240,7 +300,7 @@ CREATE TABLE IF NOT EXISTS `products` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `category_id` bigint unsigned NOT NULL,
-  `brand_id` bigint unsigned NOT NULL,
+  `brand_id` bigint unsigned DEFAULT NULL,
   `product_code` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `ean` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `upc` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -373,7 +433,7 @@ CREATE TABLE IF NOT EXISTS `repair_jobs` (
   `delivered_date` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `ticket_no` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `ticket_no` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `device_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Other',
   `device_brand` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `device_model` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
@@ -385,9 +445,12 @@ CREATE TABLE IF NOT EXISTS `repair_jobs` (
   `parts_cost` decimal(10,2) NOT NULL DEFAULT '0.00',
   `diagnosis_notes` text COLLATE utf8mb4_unicode_ci,
   `is_quote_approved` tinyint(1) NOT NULL DEFAULT '0',
-  `public_token` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `public_token` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `warranty_days` int NOT NULL DEFAULT '30',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_ticket_no` (`ticket_no`),
+  UNIQUE KEY `ticket_no` (`ticket_no`),
+  UNIQUE KEY `public_token` (`public_token`),
   KEY `customer_id` (`customer_id`),
   KEY `technician_id` (`technician_id`),
   CONSTRAINT `repair_jobs_ibfk_1` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE RESTRICT,
@@ -395,8 +458,8 @@ CREATE TABLE IF NOT EXISTS `repair_jobs` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Dumping data for table csms_db.repair_jobs: ~1 rows (approximately)
-INSERT INTO `repair_jobs` (`id`, `customer_id`, `device_name`, `serial_number`, `issue_description`, `technician_id`, `status`, `received_date`, `delivered_date`, `created_at`, `updated_at`, `ticket_no`, `device_type`, `device_brand`, `device_model`, `passcode_pin`, `accessories_included`, `estimated_cost`, `total_amount`, `labor_fee`, `parts_cost`, `diagnosis_notes`, `is_quote_approved`, `public_token`) VALUES
-	(2, 2, '', 'yuo', 'yuoyuo', NULL, 'Diagnosing', '2026-08-18 14:08:00', NULL, '2026-08-18 08:38:00', '2026-08-18 09:21:28', 'RPR-260818-9DAC49EC', 'Laptop', '8oo', 'uo', 'youoy', 'oyuo', 0.00, 0.00, 0.00, 0.00, '', 0, '32bc05a2d5870fdd4d9859a9671a5fb9a6382110f8133a6566c15b3ac216055e');
+INSERT INTO `repair_jobs` (`id`, `customer_id`, `device_name`, `serial_number`, `issue_description`, `technician_id`, `status`, `received_date`, `delivered_date`, `created_at`, `updated_at`, `ticket_no`, `device_type`, `device_brand`, `device_model`, `passcode_pin`, `accessories_included`, `estimated_cost`, `total_amount`, `labor_fee`, `parts_cost`, `diagnosis_notes`, `is_quote_approved`, `public_token`, `warranty_days`) VALUES
+	(2, 2, '', 'yuo', 'yuoyuo', NULL, 'Diagnosing', '2026-08-18 14:08:00', NULL, '2026-08-18 08:38:00', '2026-08-18 09:21:28', 'RPR-260818-9DAC49EC', 'Laptop', '8oo', 'uo', 'youoy', 'oyuo', 0.00, 0.00, 0.00, 0.00, '', 0, '32bc05a2d5870fdd4d9859a9671a5fb9a6382110f8133a6566c15b3ac216055e', 30);
 
 -- Dumping structure for table csms_db.repair_parts_used
 CREATE TABLE IF NOT EXISTS `repair_parts_used` (
@@ -405,6 +468,9 @@ CREATE TABLE IF NOT EXISTS `repair_parts_used` (
   `product_id` bigint unsigned NOT NULL,
   `product_serial_id` bigint unsigned DEFAULT NULL,
   `quantity` int NOT NULL,
+  `unit_cost` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `unit_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `repair_job_id` (`repair_job_id`),
   KEY `product_id` (`product_id`),
@@ -564,24 +630,25 @@ CREATE TABLE IF NOT EXISTS `settings` (
   PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table csms_db.settings: ~30 rows (approximately)
+-- Dumping data for table csms_db.settings: ~32 rows (approximately)
 INSERT INTO `settings` (`setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES
 	('app_debug', '0', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
 	('bill_footer_message', 'Thank you for shopping with us! Goods once sold cannot be returned without the original receipt.', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('currency_symbol', 'Rs.', '2026-08-07 08:50:55', '2026-08-16 13:59:38'),
-	('feature_accounting', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
-	('feature_custom_pc', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
-	('feature_multibranch', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
-	('feature_rma', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
-	('feature_serials', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
-	('feature_tracker', '1', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
+	('feature_accounting', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:41'),
+	('feature_custom_pc', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:39'),
+	('feature_multibranch', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:40'),
+	('feature_repairs', '1', '2026-08-19 07:40:24', '2026-08-19 08:49:07'),
+	('feature_rma', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:40'),
+	('feature_serials', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:39'),
+	('feature_tracker', '1', '2026-08-16 12:25:37', '2026-08-19 07:45:41'),
 	('maintenance_message', 'The system is undergoing scheduled technical maintenance and upgrades. Please check back shortly.', '2026-08-16 12:32:03', '2026-08-16 12:32:03'),
 	('maintenance_mode', '0', '2026-08-16 12:25:37', '2026-08-18 04:06:53'),
 	('receipt_printer_width', '80mm', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('return_policy_days', '7', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('shop_address', '123 Main Street, Colombo 01', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('shop_disabled', '0', '2026-08-16 12:29:32', '2026-08-18 04:07:37'),
-	('shop_disabled_message', 'salli gewapan', '2026-08-16 12:32:03', '2026-08-18 04:07:11'),
+	('shop_disabled_message', 'The system is undergoing scheduled technical maintenance and upgrades. Please check back shortly.', '2026-08-16 12:32:03', '2026-08-19 08:48:39'),
 	('shop_email', 'info@techsolutions.lk', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('shop_language', 'en', '2026-08-16 13:59:18', '2026-08-18 04:05:54'),
 	('shop_name', 'Tech Solutions Inc.', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
@@ -592,6 +659,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `created_at`, `updated_a
 	('smtp_crypto', 'tls', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
 	('smtp_host', 'smtp.gmail.com', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
 	('smtp_port', '587', '2026-08-16 12:25:37', '2026-08-16 12:25:37'),
+	('superadmin_shop_access', '0', '2026-08-19 08:48:47', '2026-08-19 08:49:00'),
 	('supported_currencies_json', '[{"code":"LKR","name":"Sri Lankan Rupee","symbol":"Rs.","rate":1,"status":"active"},{"code":"USD","name":"US Dollar","symbol":"$","rate":310,"status":"active"},{"code":"EUR","name":"Euro","symbol":"\\u20ac","rate":340,"status":"inactive"},{"code":"GBP","name":"British Pound","symbol":"\\u00a3","rate":395,"status":"inactive"},{"code":"INR","name":"Indian Rupee","symbol":"\\u20b9","rate":3.7,"status":"inactive"}]', '2026-08-16 13:52:01', '2026-08-16 13:58:50'),
 	('system_name', 'TechShop', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
 	('system_timezone', 'Asia/Colombo', '2026-08-07 08:50:55', '2026-08-07 08:50:55'),
@@ -656,13 +724,19 @@ CREATE TABLE IF NOT EXISTS `users` (
   `branch_id` int unsigned NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table csms_db.users: ~3 rows (approximately)
+-- Dumping data for table csms_db.users: ~9 rows (approximately)
 INSERT INTO `users` (`id`, `name`, `email`, `password`, `role`, `status`, `created_at`, `updated_at`, `phone`, `branch_id`) VALUES
 	(5, 'Software Engineer (SuperAdmin)', 'superadmin@example.com', '$2y$12$.raE1VMrm4emjKD2IdafNej/vTq9pn8nsNbk44Bupci0KwkOZ90EC', 'SuperAdmin', 1, '2026-08-16 12:13:14', '2026-08-16 12:13:14', NULL, 1),
 	(6, 'Chamika sandeepa', 'infor.chamika@gmail.com', '$2y$12$1hIFklgUbDOqPCLfSaK7ROHN2.myHe/RapaeD7.g0RwQ6j5mcSoPe', 'Admin', 1, '2026-08-18 09:43:06', '2026-08-18 09:43:06', '+94761042162', 1),
-	(7, 'Chamika sandeepa', 'infor.rp@gmail.com', '$2y$12$7pINVdM3HJie2hWgaV57j.oJHosNtOQrrmADyrJ7Bpc5NgMB2ap76', 'Technician', 1, '2026-08-18 10:00:10', '2026-08-18 10:00:10', '+94761042162', 1);
+	(7, 'Chamika sandeepa', 'infor.rp@gmail.com', '$2y$12$7pINVdM3HJie2hWgaV57j.oJHosNtOQrrmADyrJ7Bpc5NgMB2ap76', 'Technician', 1, '2026-08-18 10:00:10', '2026-08-18 10:00:10', '+94761042162', 1),
+	(8, 'Admin User', 'admin@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Admin', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1),
+	(9, 'Manager User', 'manager@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Manager', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1),
+	(10, 'Cashier User', 'cashier@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Cashier', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1),
+	(11, 'Technician Alex', 'tech@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Technician', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1),
+	(12, 'Inventory Staff Dave', 'inventory@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Inventory', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1),
+	(13, 'Accountant Sarah', 'accountant@example.com', '$2y$12$6C2mgDd9Yzcra346s5RnKufkinxmuR7SN0rPen0GHlxjuflp6setC', 'Accountant', 1, '2026-08-19 05:49:10', '2026-08-19 05:49:10', NULL, 1);
 
 -- Dumping structure for table csms_db.warranty_claims
 CREATE TABLE IF NOT EXISTS `warranty_claims` (
@@ -671,11 +745,15 @@ CREATE TABLE IF NOT EXISTS `warranty_claims` (
   `customer_id` bigint unsigned NOT NULL,
   `claim_date` date NOT NULL,
   `issue` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `status` enum('Pending','Approved','Rejected','Repaired','Replaced') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
+  `status` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
   `resolution` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `claim_no` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `claim_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'In-House Repair',
+  `created_by` bigint unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `claim_no` (`claim_no`),
   KEY `product_serial_id` (`product_serial_id`),
   KEY `customer_id` (`customer_id`),
   CONSTRAINT `warranty_claims_ibfk_1` FOREIGN KEY (`product_serial_id`) REFERENCES `product_serials` (`id`) ON DELETE RESTRICT,
