@@ -180,6 +180,10 @@ if (!function_exists('is_module_feature_enabled')) {
 if (!function_exists('get_page_access_level')) {
     function get_page_access_level(string $page, string $role): string
     {
+        if ($page === 'settings.php') {
+            return ($role === 'SuperAdmin') ? 'F' : '-';
+        }
+
         if ($role === 'SuperAdmin') {
             return 'F';
         }

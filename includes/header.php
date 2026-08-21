@@ -853,9 +853,14 @@ if (empty($initials)) $initials = 'U';
                             <span class="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mt-1"><?php echo htmlspecialchars($user_role); ?></span>
                         </div>
                         <div class="py-1">
-                            <?php if ($role === 'Admin'): ?>
-                            <a href="settings.php" class="flex items-center px-3 py-2 text-xs font-medium text-slate-600 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-xl transition-colors">
-                                <i class="fa-solid fa-sliders w-4 text-slate-400 mr-2"></i> Shop Settings
+                            <?php if (can_access_page('shop_settings.php')): ?>
+                            <a href="shop_settings.php" class="flex items-center px-3 py-2 text-xs font-medium text-slate-600 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-xl transition-colors">
+                                <i class="fa-solid fa-store w-4 text-slate-400 mr-2"></i> Shop Settings
+                            </a>
+                            <?php endif; ?>
+                            <?php if ($role === 'SuperAdmin'): ?>
+                            <a href="settings.php" class="flex items-center px-3 py-2 text-xs font-bold text-purple-700 hover:bg-purple-50 rounded-xl transition-colors">
+                                <i class="fa-solid fa-gears w-4 text-purple-500 mr-2"></i> System Settings
                             </a>
                             <?php endif; ?>
                             <a href="../logout.php" class="flex items-center px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50/60 rounded-xl transition-colors">

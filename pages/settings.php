@@ -25,8 +25,12 @@ enforce_page_access('settings.php');
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? 'Cashier';
 
-// SuperAdmin Check
-$is_superadmin = ($role === 'SuperAdmin');
+if ($role !== 'SuperAdmin') {
+    header("Location: shop_settings.php");
+    exit;
+}
+
+$is_superadmin = true;
 
 // Download Database Backup Action (SuperAdmin Only)
 if (isset($_GET['action']) && $_GET['action'] === 'download_backup' && $is_superadmin && $pdo) {
