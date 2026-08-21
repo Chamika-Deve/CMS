@@ -269,7 +269,7 @@ $payColors = ['bg-emerald-500','bg-blue-500','bg-amber-500','bg-purple-500'];
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div class="flex items-center justify-between">
             <p class="text-sm font-medium text-slate-500">Total Revenue</p>
-            <span class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><i class="fa-solid fa-dollar-sign"></i></span>
+            <span class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><i class="fa-solid fa-money-bill-trend-up"></i></span>
         </div>
         <p class="text-2xl font-bold text-slate-900 mt-3"><?php echo money($kpi['revenue'], $currency); ?></p>
         <p class="text-xs text-slate-400 mt-1"><?php echo $kpi['orders']; ?> orders</p>

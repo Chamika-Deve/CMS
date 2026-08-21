@@ -755,15 +755,24 @@ if (empty($initials)) $initials = 'U';
                         <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
                     </button>
                     <div id="langDropdown" class="hidden absolute right-0 mt-3 w-40 bg-white rounded-2xl shadow-floating border border-slate-100 p-2 z-50 text-xs font-bold divide-y divide-slate-50">
-                        <a href="?lang=en" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'en' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
+                        <?php
+                        $current_query = $_GET;
+                        $current_query['lang'] = 'en';
+                        $lang_en_url = '?' . http_build_query($current_query);
+                        $current_query['lang'] = 'si';
+                        $lang_si_url = '?' . http_build_query($current_query);
+                        $current_query['lang'] = 'ta';
+                        $lang_ta_url = '?' . http_build_query($current_query);
+                        ?>
+                        <a href="<?php echo htmlspecialchars($lang_en_url); ?>" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'en' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
                             <span>English</span>
                             <span class="text-[10px] text-slate-400 font-mono">EN</span>
                         </a>
-                        <a href="?lang=si" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'si' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
+                        <a href="<?php echo htmlspecialchars($lang_si_url); ?>" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'si' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
                             <span>සිංහල</span>
                             <span class="text-[10px] text-slate-400 font-mono">SI</span>
                         </a>
-                        <a href="?lang=ta" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'ta' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
+                        <a href="<?php echo htmlspecialchars($lang_ta_url); ?>" class="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 <?php echo ($current_lang ?? 'en') === 'ta' ? 'text-emerald-600 bg-emerald-50/60' : ''; ?>">
                             <span>தமிழ்</span>
                             <span class="text-[10px] text-slate-400 font-mono">TA</span>
                         </a>

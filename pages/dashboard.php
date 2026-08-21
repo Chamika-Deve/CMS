@@ -141,7 +141,7 @@ $chart_series = array_values($daily_sales_map);
             <!-- Stat Card 1: Total Sales -->
             <div class="bg-white rounded-3xl p-6 shadow-card border border-slate-100/90 flex flex-col justify-between hover:shadow-soft transition-all duration-200 group">
                 <div class="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl mb-4 group-hover:scale-105 transition-transform">
-                    <i class="fa-solid fa-dollar-sign"></i>
+                    <i class="fa-solid fa-money-bill-trend-up"></i>
                 </div>
                 <div>
                     <h3 class="text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight mb-1">
