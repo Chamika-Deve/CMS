@@ -480,5 +480,53 @@
     })();
     </script>
     <?php endif; ?>
+    <script>
+    if (typeof window.initSmartFormSave === 'undefined') {
+        window.initSmartFormSave = function(formId, barId) {
+            const form = document.getElementById(formId);
+            const bar = document.getElementById(barId);
+            if (!form || !bar) return;
+
+            let initialValues = '';
+
+            function getFormSnapshot() {
+                const formData = new FormData(form);
+                const state = {};
+                for (let [key, val] of formData.entries()) {
+                    if (val instanceof File) {
+                        state[key] = val.name + '-' + val.size;
+                    } else {
+                        state[key] = val;
+                    }
+                }
+                return JSON.stringify(state);
+            }
+
+            setTimeout(() => {
+                initialValues = getFormSnapshot();
+            }, 300);
+
+            function checkFormChanges() {
+                const current = getFormSnapshot();
+                if (current !== initialValues) {
+                    bar.classList.remove('opacity-0', 'translate-y-24', 'pointer-events-none');
+                    bar.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+                } else {
+                    bar.classList.add('opacity-0', 'translate-y-24', 'pointer-events-none');
+                    bar.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+                }
+            }
+
+            form.addEventListener('input', checkFormChanges);
+            form.addEventListener('change', checkFormChanges);
+            form.addEventListener('keyup', checkFormChanges);
+
+            window.discardFormChanges = function() {
+                form.reset();
+                checkFormChanges();
+            };
+        };
+    }
+    </script>
 </body>
 </html>

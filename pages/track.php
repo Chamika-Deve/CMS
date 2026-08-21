@@ -105,6 +105,12 @@ if ($curr_step_idx === false) $curr_step_idx = 0;
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        @media print {
+            header, footer, form, .no-print, button, a[href*="dashboard"] { display: none !important; }
+            body { background: #ffffff !important; padding: 0 !important; color: #000000 !important; }
+            main { max-width: 100% !important; padding: 0 !important; }
+            .shadow-card { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+        }
     </style>
 </head>
 <body class="bg-[#F7FAF8] text-slate-800 min-h-screen flex flex-col justify-between antialiased">
@@ -179,9 +185,9 @@ if ($curr_step_idx === false) $curr_step_idx = 0;
                     <span class="px-4 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         Status: <?php echo htmlspecialchars($job['status']); ?>
                     </span>
-                    <button onclick="window.print()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition-colors flex items-center gap-1.5">
+                    <a href="<?php echo htmlspecialchars($base_prefix); ?>print_repair_receipt.php?ticket=<?php echo urlencode($job['public_token'] ?? $job['ticket_no'] ?? $job['id']); ?>&print=1" target="_blank" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
                         <i class="fa-solid fa-print"></i> Print Receipt
-                    </button>
+                    </a>
                 </div>
             </div>
 

@@ -179,7 +179,7 @@ $active_logo = get_setting('shop_logo', '');
         </div>
     <?php endif; ?>
 
-    <form method="POST" action="shop_settings.php" enctype="multipart/form-data" class="space-y-6">
+    <form id="shopSettingsForm" method="POST" action="shop_settings.php" enctype="multipart/form-data" class="space-y-6">
         
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -316,12 +316,32 @@ $active_logo = get_setting('shop_logo', '');
 
         </div>
 
-        <div class="flex justify-end pt-2">
-            <button type="submit" class="px-8 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shadow-emerald-500/25">
-                Save Shop Settings
-            </button>
+        <!-- Dynamic Floating Save Bar (Pops up only when input changes occur) -->
+        <div id="shopSaveBar" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 pointer-events-none transition-all duration-300 ease-out">
+            <div class="bg-slate-900/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-800 flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span class="text-xs font-bold text-slate-200">Unsaved Shop Settings Detected</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="discardFormChanges()" class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-all">
+                        Discard
+                    </button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-500/30 flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Save Shop Settings</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </form>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initSmartFormSave === 'function') {
+                initSmartFormSave('shopSettingsForm', 'shopSaveBar');
+            }
+        });
+    </script>
 </div>
 
 <?php require_once '../includes/footer.php'; ?>

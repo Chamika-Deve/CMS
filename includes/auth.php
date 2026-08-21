@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/sms.php';
+
 /**
  * Shared authentication, authorization, and CSRF helpers.
  *

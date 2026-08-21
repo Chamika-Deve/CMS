@@ -102,7 +102,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt_log->execute([$_SESSION['user']['id'], $pdo->lastInsertId(), "Created ticket $ticket_no for $device_brand $device_model"]);
             }
 
-            $msg = "Repair Ticket #$ticket_no created successfully!";
+            // Automated Customer SMS Dispatch
+            $sms_notice = '';
+            try {
+                $stmt_cust = $pdo->prepare("SELECT name, phone, email FROM customers WHERE id = ? LIMIT 1");
+                $stmt_cust->execute([$customer_id]);
+                $cust_row = $stmt_cust->fetch(PDO::FETCH_ASSOC);
+
+                if ($cust_row && !empty($cust_row['phone'])) {
+                    $job_data = [
+                        'id'           => $pdo->lastInsertId(),
+                        'ticket_no'    => $ticket_no,
+                        'public_token' => $public_token,
+                        'device_type'  => $device_type,
+                        'device_brand' => $device_brand,
+                        'device_model' => $device_model,
+                    ];
+                    $sms_res = send_repair_ticket_sms($job_data, $cust_row);
+                    if (!empty($sms_res['success'])) {
+                        $sms_notice = " 📲 Automated SMS sent to customer (" . htmlspecialchars($cust_row['phone']) . ").";
+                    } else {
+                        $sms_error = htmlspecialchars($sms_res['error'] ?? 'dispatch failed');
+                        $sms_notice = " (SMS Notice: " . $sms_error . ")";
+                    }
+                }
+            } catch (Throwable $sms_ex) {
+                error_log('Automated repair SMS failed: ' . $sms_ex->getMessage());
+            }
+
+            $msg = "Repair Ticket #$ticket_no created successfully!" . $sms_notice;
         } catch (Exception $e) {
             $msg = "Error creating ticket: " . safe_error_message($e);
             $msg_type = 'error';
@@ -399,6 +427,9 @@ if ($pdo) {
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="track.php?ticket=<?php echo urlencode($r['public_token'] ?? $r['ticket_no'] ?? $r['id']); ?>" target="_blank" title="Open Customer View" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                    </a>
+                                    <a href="../print_repair_receipt.php?ticket=<?php echo urlencode($r['ticket_no'] ?? $r['id']); ?>&print=1" target="_blank" title="Print Official Repair Receipt" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-600 hover:text-purple-600 hover:bg-purple-50 flex items-center justify-center transition-colors text-xs">
+                                        <i class="fa-solid fa-print"></i>
                                     </a>
                                     <?php if ($can_update_repairs): ?>
                                     <button onclick="openManageJobModal(<?php echo htmlspecialchars(json_encode($r)); ?>)" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5">

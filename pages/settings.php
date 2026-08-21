@@ -131,16 +131,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             // Feature flags toggles
-            $flags = ['feature_multibranch', 'feature_repairs', 'feature_custom_pc', 'feature_serials', 'feature_rma', 'feature_accounting', 'feature_tracker', 'superadmin_shop_access', 'maintenance_mode', 'shop_disabled', 'app_debug'];
+            $flags = ['feature_multibranch', 'feature_repairs', 'feature_custom_pc', 'feature_serials', 'feature_rma', 'feature_accounting', 'feature_tracker', 'superadmin_shop_access', 'maintenance_mode', 'shop_disabled', 'app_debug', 'sms_enabled'];
             foreach ($flags as $flg) {
                 $val = isset($_POST['settings'][$flg]) ? '1' : '0';
                 $stmt->execute([$flg, $val]);
             }
 
-            $msg = "System configurations & feature flags updated successfully!";
+            $msg = "System configurations, SMS Gateway & feature flags updated successfully!";
         } catch (Exception $e) {
             $msg = "Error updating settings: " . safe_error_message($e);
             $msg_type = 'error';
+        }
+    }
+
+    if ($action === 'send_test_sms') {
+        $test_phone = trim($_POST['test_phone'] ?? '');
+        $test_msg = trim($_POST['test_message'] ?? '');
+        if (empty($test_phone)) {
+            $msg = "Please enter a valid phone number to test SMS.";
+            $msg_type = 'error';
+        } else {
+            if (empty($test_msg)) {
+                $test_msg = "Test SMS from " . get_setting('shop_name', 'TechShop') . ". Automated SMS Gateway is active and working!";
+            }
+            $sms_res = send_sms($test_phone, $test_msg);
+            if (!empty($sms_res['success'])) {
+                $msg = "Test SMS sent successfully to " . htmlspecialchars($test_phone) . "!";
+                $msg_type = 'success';
+            } else {
+                $msg = "Test SMS Failed: " . htmlspecialchars($sms_res['error'] ?? 'Unknown gateway error');
+                $msg_type = 'error';
+            }
         }
     }
 
@@ -495,6 +516,12 @@ require_once '../includes/header.php';
         </div>
     </div>
 
+    <!-- Hidden Form for Test SMS -->
+    <form id="testSmsForm" method="POST" class="hidden">
+        <input type="hidden" name="_csrf_token" value="<?php echo csrf_token(); ?>">
+        <input type="hidden" name="action" value="send_test_sms">
+    </form>
+
     <?php if ($msg): ?>
         <div class="<?php echo $msg_type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'; ?> border px-4 py-3 rounded-2xl text-xs sm:text-sm flex items-center justify-between shadow-sm">
             <div class="flex items-center gap-2">
@@ -528,7 +555,7 @@ require_once '../includes/header.php';
 
     <?php if ($tab === 'system'): ?>
     <!-- Tab 1: System, Environment & APIs -->
-    <form method="POST" action="settings.php" class="space-y-6">
+    <form id="systemSettingsForm" method="POST" action="settings.php" class="space-y-6">
         <input type="hidden" name="action" value="save_settings">
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -614,17 +641,69 @@ require_once '../includes/header.php';
                     </h2>
                     
                     <div class="space-y-4">
-                        <!-- SMS Gateway -->
-                        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200/70 space-y-3">
-                            <span class="text-xs font-bold text-slate-700 uppercase tracking-wider block">SMS Gateway (Twilio / NotifyLK / Vonage)</span>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- SMS Gateway Config & Automated Repair Dispatch -->
+                        <div class="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-4">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">API Key / Account SID</label>
-                                    <input type="text" name="settings[sms_api_key]" value="<?php echo get_setting('sms_api_key', 'AC_live_demo_key_89712'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <span class="text-xs font-extrabold text-slate-800 uppercase tracking-wider block">SMS Gateway & Automated Notifications</span>
+                                    <p class="text-[11px] text-slate-500">Automatically sends repair ticket numbers and tracking links to customer mobile numbers upon intake.</p>
+                                </div>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" name="settings[sms_enabled]" value="1" <?php echo is_flag_enabled('sms_enabled', 1) ? 'checked' : ''; ?> class="w-4 h-4 text-purple-600 rounded">
+                                    <span class="text-xs font-bold text-slate-700">Enable SMS Notifications</span>
+                                </label>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">SMS Provider / Gateway Service</label>
+                                    <select name="settings[sms_provider]" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-purple-500/20">
+                                        <option value="smsapi_lk" <?php echo get_setting('sms_provider', 'smsapi_lk') === 'smsapi_lk' ? 'selected' : ''; ?>>SMSAPI.lk (dashboard.smsapi.lk)</option>
+                                        <option value="notify_lk" <?php echo get_setting('sms_provider') === 'notify_lk' ? 'selected' : ''; ?>>Notify.lk (Sri Lanka)</option>
+                                        <option value="textware" <?php echo get_setting('sms_provider') === 'textware' ? 'selected' : ''; ?>>Textware Sri Lanka</option>
+                                        <option value="dialog_mobitel" <?php echo get_setting('sms_provider') === 'dialog_mobitel' ? 'selected' : ''; ?>>Dialog / Mobitel Enterprise SMS</option>
+                                        <option value="twilio" <?php echo get_setting('sms_provider') === 'twilio' ? 'selected' : ''; ?>>Twilio International</option>
+                                        <option value="custom_http" <?php echo get_setting('sms_provider') === 'custom_http' ? 'selected' : ''; ?>>Custom HTTP GET/POST API</option>
+                                    </select>
                                 </div>
                                 <div>
-                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Auth Token / Secret</label>
-                                    <input type="password" name="settings[sms_api_token]" value="<?php echo get_setting('sms_api_token', '••••••••••••••••'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">SMS API Key / Token (from Gateway Dashboard)</label>
+                                    <input type="text" name="settings[sms_api_key]" value="<?php echo htmlspecialchars(get_setting('sms_api_key', '')); ?>" placeholder="Paste API Key from dashboard.smsapi.lk" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:ring-2 focus:ring-purple-500/20">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Sender ID / Mask Name</label>
+                                    <input type="text" name="settings[sms_sender_id]" value="<?php echo htmlspecialchars(get_setting('sms_sender_id', 'SMSAPI')); ?>" placeholder="e.g. SMSAPI or TechShop" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-600 mb-1">SMS API Endpoint URL (dashboard.smsapi.lk)</label>
+                                    <?php 
+                                        $raw_sms_url = trim(get_setting('sms_api_url', ''));
+                                        if (empty($raw_sms_url) || !str_contains($raw_sms_url, '/sms/send')) {
+                                            $raw_sms_url = 'https://dashboard.smsapi.lk/api/v3/sms/send';
+                                        }
+                                    ?>
+                                    <input type="text" name="settings[sms_api_url]" value="<?php echo htmlspecialchars($raw_sms_url); ?>" placeholder="https://dashboard.smsapi.lk/api/v3/sms/send" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <span class="text-[10px] text-slate-400">Copy the API URL from your dashboard.smsapi.lk account if custom.</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 mb-1">Automated Repair Ticket SMS Message Template</label>
+                                <textarea name="settings[sms_repair_template]" rows="2" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-mono focus:ring-2 focus:ring-purple-500/20"><?php echo htmlspecialchars(get_setting('sms_repair_template', 'Dear {customer_name}, your repair ticket {ticket_no} ({device}) has been created at {shop_name}. Track live progress: {track_url}')); ?></textarea>
+                                <p class="text-[10px] text-slate-400 mt-1">Available placeholders: <code class="text-purple-600 font-bold">{customer_name}</code>, <code class="text-purple-600 font-bold">{ticket_no}</code>, <code class="text-purple-600 font-bold">{device}</code>, <code class="text-purple-600 font-bold">{shop_name}</code>, <code class="text-purple-600 font-bold">{track_url}</code></p>
+                            </div>
+
+                            <!-- Live Test SMS Tool -->
+                            <div class="pt-3 border-t border-slate-200/70">
+                                <span class="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block mb-2"><i class="fa-solid fa-paper-plane text-purple-600 mr-1"></i> Send Test SMS to Mobile</span>
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <input type="text" name="test_phone" form="testSmsForm" placeholder="Enter mobile number (e.g. 0771234567)" class="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
+                                    <button type="submit" form="testSmsForm" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 shrink-0">
+                                        <i class="fa-solid fa-paper-plane"></i> Send Test SMS
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -727,12 +806,32 @@ require_once '../includes/header.php';
 
         </div>
 
-        <div class="flex justify-end">
-            <button type="submit" class="px-7 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shadow-purple-600/25">
-                Save System Configurations
-            </button>
+        <!-- Dynamic Floating Save Bar (Pops up only when input changes occur) -->
+        <div id="smartSaveBar" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 pointer-events-none transition-all duration-300 ease-out">
+            <div class="bg-slate-900/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-800 flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping"></span>
+                    <span class="text-xs font-bold text-slate-200">Unsaved System Changes Detected</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="discardFormChanges()" class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-all">
+                        Discard
+                    </button>
+                    <button type="submit" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Save System Configurations</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </form>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initSmartFormSave === 'function') {
+                initSmartFormSave('systemSettingsForm', 'smartSaveBar');
+            }
+        });
+    </script>
     <?php endif; ?>
 
     <?php if ($tab === 'currencies'): ?>
