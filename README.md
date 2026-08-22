@@ -99,6 +99,7 @@ The app reads database credentials from environment variables and otherwise uses
 | `DB_USER` | `root` |
 | `DB_PASS` | empty |
 | `APP_DEBUG` | `false` |
+| `CSMS_DEMO_QUICK_LOGIN` | `false` — when `true`, shows the 1-click demo role switcher on the login screen (development only) |
 
 For Apache, set these with `SetEnv`; for PHP's development server or the CLI, export them in the shell. Do not commit real credentials to `includes/db.php`.
 

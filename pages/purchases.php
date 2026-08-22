@@ -233,8 +233,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 5. Goods Received Note (GRN) — Strict Validation & Fulfillment Tracking
     if ($action === 'receive_grn' && $pdo) {
         try {
-            $po_id = (int)$_POST['po_id'];
-            $product_id = (int)$_POST['product_id'];
+            $po_id = (int)($_POST['po_id'] ?? 0);
+            $product_id = (int)($_POST['product_id'] ?? 0);
             $received_qty = (int)($_POST['received_qty'] ?? 0);
             $is_non_serialized = isset($_POST['is_non_serialized']) ? 1 : 0;
             $serials_raw = trim($_POST['serials_list'] ?? '');
@@ -1231,10 +1231,10 @@ function renderLineItems() {
             const sub = item.qty * item.cost;
             tbody.innerHTML += `
                 <tr>
-                    <td class="p-2 font-bold text-slate-800">${item.name}</td>
+                    <td class="p-2 font-bold text-slate-800">${escHtml(item.name)}</td>
                     <td class="p-2 text-center font-bold">${item.qty}</td>
-                    <td class="p-2 text-right">$ ${item.cost.toFixed(2)}</td>
-                    <td class="p-2 text-right font-extrabold text-emerald-700">$ ${sub.toFixed(2)}</td>
+                    <td class="p-2 text-right">${CURRENCY_SYMBOL} ${item.cost.toFixed(2)}</td>
+                    <td class="p-2 text-right font-extrabold text-emerald-700">${CURRENCY_SYMBOL} ${sub.toFixed(2)}</td>
                     <td class="p-2 text-center">
                         <button type="button" onclick="removeLineItem(${i})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
                     </td>
@@ -1285,12 +1285,12 @@ function viewPODetails(poId) {
 
                     tbody.innerHTML += `
                         <tr>
-                            <td class="p-2.5 font-semibold text-slate-800">${it.product_name || 'Product'} (${it.product_code || ''})</td>
+                            <td class="p-2.5 font-semibold text-slate-800">${escHtml(it.product_name || 'Product')} (${escHtml(it.product_code || '')})</td>
                             <td class="p-2.5 text-center font-bold">${ord}</td>
                             <td class="p-2.5 text-center font-bold text-emerald-600">${rec}</td>
                             <td class="p-2.5 text-center font-bold ${rem > 0 ? 'text-amber-600' : 'text-slate-400'}">${rem}</td>
-                            <td class="p-2.5 text-right">$ ${parseFloat(it.unit_cost || 0).toFixed(2)}</td>
-                            <td class="p-2.5 text-right font-bold text-slate-900">$ ${sub.toFixed(2)}</td>
+                            <td class="p-2.5 text-right">${CURRENCY_SYMBOL} ${parseFloat(it.unit_cost || 0).toFixed(2)}</td>
+                            <td class="p-2.5 text-right font-bold text-slate-900">${CURRENCY_SYMBOL} ${sub.toFixed(2)}</td>
                         </tr>
                     `;
                 });
@@ -1356,8 +1356,8 @@ function onGrnPoChanged(poId) {
                     <div onclick="selectGrnItem(${it.product_id}, ${rem})" class="p-3.5 bg-slate-50 hover:bg-emerald-50/70 border ${isComplete ? 'border-emerald-200 bg-emerald-50/30 opacity-75' : 'border-slate-200/80 hover:border-emerald-400 cursor-pointer'} rounded-2xl transition-all">
                         <div class="flex items-center justify-between mb-1.5">
                             <div>
-                                <span class="font-bold text-slate-900 block leading-tight">${it.product_name}</span>
-                                <span class="text-[10px] text-slate-400 font-mono">${it.product_code}</span>
+                                <span class="font-bold text-slate-900 block leading-tight">${escHtml(it.product_name)}</span>
+                                <span class="text-[10px] text-slate-400 font-mono">${escHtml(it.product_code)}</span>
                             </div>
                             ${isComplete ? 
                                 '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[10px]"><i class="fa-solid fa-check mr-1"></i> Completed</span>' : 
@@ -1557,7 +1557,7 @@ function addSerial(e) {
             document.getElementById('scanCount').textContent = scannedCount;
             const log = document.getElementById('scannedLog');
             if (scannedCount === 1) log.innerHTML = '';
-            log.innerHTML = `<div class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i> ${serial}</div>` + log.innerHTML;
+            log.innerHTML = `<div class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i> ${escHtml(serial)}</div>` + log.innerHTML;
             document.getElementById('serialInput').value = '';
         } else {
             alert(d.message);

@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'edit_supplier' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             $name = trim($_POST['name'] ?? '');
             $contact = trim($_POST['contact_person'] ?? '');
             $phone = trim($_POST['phone'] ?? '');
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'delete_supplier' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             $stmt = $pdo->prepare("DELETE FROM suppliers WHERE id = ?");
             $stmt->execute([$id]);
             $msg = "Supplier deleted successfully.";

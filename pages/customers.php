@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'edit_customer' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             $name = trim($_POST['name'] ?? '');
             $phone = trim($_POST['phone'] ?? '');
             $email = trim($_POST['email'] ?? '');
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'delete_customer' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             if ($id === 1) {
                 $msg = "Cannot delete default walk-in customer.";
                 $msg_type = 'error';

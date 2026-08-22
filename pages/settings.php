@@ -319,7 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 4. User Impersonation (Log in as any user for developer debugging)
     if ($action === 'impersonate_user' && $pdo) {
         try {
-            $target_id = (int)$_POST['target_user_id'];
+            $target_id = (int)($_POST['target_user_id'] ?? 0);
             $stmt_u = $pdo->prepare("SELECT id, name, email, role FROM users WHERE id = ?");
             $stmt_u->execute([$target_id]);
             $target_user = $stmt_u->fetch(PDO::FETCH_ASSOC);
@@ -348,8 +348,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 5. Force Reset Password for Any Account
     if ($action === 'force_password_reset' && $pdo) {
         try {
-            $target_id = (int)$_POST['target_user_id'];
-            $new_pass = $_POST['new_password'] ?? 'password123';
+            $target_id = (int)($_POST['target_user_id'] ?? 0);
+            $new_pass = trim($_POST['new_password'] ?? '');
+            if ($target_id < 1) {
+                throw new InvalidArgumentException('Select a valid user account.');
+            }
+            if (strlen($new_pass) < 8) {
+                throw new InvalidArgumentException('The replacement password must contain at least 8 characters.');
+            }
             $hash = password_hash($new_pass, PASSWORD_BCRYPT);
 
             $stmt_p = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
@@ -620,11 +626,11 @@ require_once '../includes/header.php';
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">API Key / Account SID</label>
-                                    <input type="text" name="settings[sms_api_key]" value="<?php echo get_setting('sms_api_key', 'AC_live_demo_key_89712'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <input type="text" name="settings[sms_api_key]" value="<?php echo get_setting('sms_api_key', ''); ?>" placeholder="e.g. AC_live_xxxxxxxxxxxxxxxx" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">Auth Token / Secret</label>
-                                    <input type="password" name="settings[sms_api_token]" value="<?php echo get_setting('sms_api_token', '••••••••••••••••'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <input type="password" name="settings[sms_api_token]" value="<?php echo get_setting('sms_api_token', ''); ?>" placeholder="Leave blank to keep the current token" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
                                 </div>
                             </div>
                         </div>
@@ -635,11 +641,11 @@ require_once '../includes/header.php';
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">SMTP Host</label>
-                                    <input type="text" name="settings[smtp_host]" value="<?php echo get_setting('smtp_host', 'smtp.gmail.com'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <input type="text" name="settings[smtp_host]" value="<?php echo get_setting('smtp_host', ''); ?>" placeholder="e.g. smtp.gmail.com" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">SMTP Port</label>
-                                    <input type="text" name="settings[smtp_port]" value="<?php echo get_setting('smtp_port', '587'); ?>" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
+                                    <input type="text" name="settings[smtp_port]" value="<?php echo get_setting('smtp_port', ''); ?>" placeholder="e.g. 587" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 mb-1">Encryption</label>

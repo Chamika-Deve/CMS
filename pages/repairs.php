@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'create_ticket' && $pdo) {
         try {
             $ticket_no = 'RPR-' . date('ymd') . '-' . strtoupper(bin2hex(random_bytes(4)));
-            $customer_id = (int)$_POST['customer_id'];
+            $customer_id = (int)($_POST['customer_id'] ?? 0);
             $device_type = trim($_POST['device_type'] ?? 'Laptop');
             $device_brand = trim($_POST['device_brand'] ?? '');
             $device_model = trim($_POST['device_model'] ?? '');
@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'update_status' && $pdo) {
         try {
-            $job_id = (int)$_POST['job_id'];
+            $job_id = (int)($_POST['job_id'] ?? 0);
             $new_status = $_POST['status'] ?? '';
             $allowed_statuses = ['Received', 'Diagnosing', 'Waiting for Parts', 'In Repair', 'Ready for Pickup', 'Completed', 'Closed', 'Cancelled'];
             if (!in_array($new_status, $allowed_statuses, true)) {
@@ -166,10 +166,12 @@ if ($pdo) {
         </div>
         
         <div class="flex items-center gap-3">
+            <?php if (feature_enabled('feature_tracker')): ?>
             <a href="track.php" target="_blank" class="px-4 py-2.5 rounded-2xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs sm:text-sm font-bold transition-all shadow-sm flex items-center gap-2">
                 <i class="fa-solid fa-qrcode text-emerald-600"></i>
                 <span>Public Status Portal</span>
             </a>
+            <?php endif; ?>
             <button onclick="openIntakeModal()" class="px-5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs sm:text-sm font-bold transition-all shadow-sm shadow-emerald-500/25 flex items-center gap-2">
                 <i class="fa-solid fa-plus text-xs"></i>
                 <span>New Device Intake</span>
@@ -345,9 +347,11 @@ if ($pdo) {
                             <!-- Actions -->
                             <td class="py-4 pl-4 pr-2 text-right">
                                 <div class="flex items-center justify-end gap-2">
+                                    <?php if (feature_enabled('feature_tracker')): ?>
                                     <a href="track.php?ticket=<?php echo urlencode($r['public_token'] ?? $r['ticket_no'] ?? $r['id']); ?>" target="_blank" title="Open Customer View" class="w-8 h-8 rounded-xl border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors text-xs">
                                         <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                     </a>
+                                    <?php endif; ?>
                                     <?php if ($can_update_repairs): ?>
                                     <button onclick="openManageJobModal(<?php echo htmlspecialchars(json_encode($r)); ?>)" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-500 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5">
                                         <i class="fa-solid fa-screwdriver-wrench text-xs"></i>

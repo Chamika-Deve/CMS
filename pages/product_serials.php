@@ -20,7 +20,7 @@ if ($pdo && $product_id) {
             
             // Action 1: Check Serial
             if (isset($_POST['action']) && $_POST['action'] === 'check_serial') {
-                $check_serial = trim($_POST['check_serial']);
+                $check_serial = trim($_POST['check_serial'] ?? '');
                 $response = ['success' => false, 'message' => '', 'data' => null];
                 
                 if (empty($check_serial)) {
@@ -44,7 +44,7 @@ if ($pdo && $product_id) {
             
             // Action 2: Add Serial
             if (isset($_POST['serial_number'])) {
-                $serial_number = trim($_POST['serial_number']);
+                $serial_number = trim($_POST['serial_number'] ?? '');
                 $response = ['success' => false, 'message' => ''];
                 
                 if ($serial_number === '' || strlen($serial_number) > 100) {
@@ -74,7 +74,7 @@ if ($pdo && $product_id) {
             
             // Action 3: Delete Serial
             if (isset($_POST['action']) && $_POST['action'] === 'delete_serial') {
-                $serial_id = (int)$_POST['serial_id'];
+                $serial_id = (int)($_POST['serial_id'] ?? 0);
                 $response = ['success' => false, 'message' => ''];
                 try {
                     $stmt = $pdo->prepare("DELETE FROM product_serials WHERE id = ? AND product_id = ? AND status = 'in_stock'");
@@ -342,7 +342,7 @@ if (!$product && $_SERVER['REQUEST_METHOD'] !== 'POST') {
                 playBeep('success');
                 alertBox.classList.add('bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-200');
                 alertIcon.className = 'fa-solid fa-check-circle text-emerald-500';
-                alertMsg.innerHTML = `<span class="font-bold">${serial}</span> added.`;
+                alertMsg.innerHTML = `<span class="font-bold">${escHtml(serial)}</span> added.`;
                 
                 // Update table
                 addTableRow(serial, result.new_id);
@@ -390,7 +390,7 @@ if (!$product && $_SERVER['REQUEST_METHOD'] !== 'POST') {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-slate-50 transition-colors group bg-emerald-50'; 
         tr.innerHTML = `
-            <td class="px-6 py-3 font-mono font-medium text-slate-800">${serial}</td>
+            <td class="px-6 py-3 font-mono font-medium text-slate-800">${escHtml(serial)}</td>
             <td class="px-6 py-3">
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span> In Stock
@@ -441,7 +441,7 @@ if (!$product && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 
                 resultBox.innerHTML = `
                     <div class="font-bold flex justify-between items-center mb-1">
-                        <span class="font-mono text-blue-900">${serial}</span>
+                        <span class="font-mono text-blue-900">${escHtml(serial)}</span>
                         ${badge}
                     </div>
                     <div class="text-xs text-blue-700 opacity-80">
@@ -455,7 +455,7 @@ if (!$product && $_SERVER['REQUEST_METHOD'] !== 'POST') {
                     <div class="flex items-start">
                         <i class="fa-solid fa-circle-xmark text-slate-400 mt-1 mr-2"></i>
                         <div>
-                            <div class="font-bold text-slate-700">${serial}</div>
+                            <div class="font-bold text-slate-700">${escHtml(serial)}</div>
                             <div class="text-xs mt-0.5">Not found in this product's inventory.</div>
                         </div>
                     </div>

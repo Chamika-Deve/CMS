@@ -26,6 +26,17 @@ $db_error = null;
 
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
+
+    // Apply the configured shop timezone as early as possible so invoice
+    // numbers, audit timestamps, and date filters are consistent everywhere,
+    // including AJAX endpoints and the public repair tracker.
+    try {
+        $tz = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'system_timezone' LIMIT 1")->fetchColumn();
+        if (is_string($tz) && $tz !== '' && @date_default_timezone_set($tz) === false) {
+            error_log('Ignoring invalid system_timezone setting: ' . $tz);
+        }
+    } catch (Throwable $ignored) {
+    }
 } catch (PDOException $exception) {
     // Keep pages renderable, but never expose credentials/server details unless
     // debug mode was explicitly enabled in the environment.

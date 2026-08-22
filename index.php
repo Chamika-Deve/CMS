@@ -7,6 +7,10 @@ if (!empty($_SESSION['user'])) {
     exit;
 }
 
+// Demo quick-login buttons are opt-in (CSMS_DEMO_QUICK_LOGIN=1). They are
+// hidden by default so production deployments never advertise demo accounts.
+$showDemoLogins = filter_var(getenv('CSMS_DEMO_QUICK_LOGIN') ?: '0', FILTER_VALIDATE_BOOL);
+
 $error = '';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $email = trim($_POST['email'] ?? '');
@@ -185,7 +189,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 </button>
             </form>
 
-            <!-- 1-Click Role Logins (6 Store Roles) -->
+            <?php if ($showDemoLogins): ?>
+            <!-- 1-Click Role Logins (6 Store Roles) - demo only; enable with CSMS_DEMO_QUICK_LOGIN=1 -->
             <div class="mt-8 pt-6 border-t border-white/10">
                 <p class="text-xs font-bold text-slate-400 text-center uppercase tracking-wider mb-3">1-Click Store Role Switcher</p>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -215,6 +220,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     </button>
                 </div>
             </div>
+            <?php endif; ?>
 
             <!-- Customer Repair Tracker Link -->
             <div class="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-xs">
@@ -222,10 +228,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     <i class="fa-solid fa-qrcode"></i>
                     <span>Repair Status Tracker &rarr;</span>
                 </a>
+                <?php if ($showDemoLogins): ?>
                 <button type="button" onclick="setRole('superadmin@example.com')" title="Developer Root Access" class="text-slate-500 hover:text-purple-400 text-[11px] font-mono transition-colors flex items-center gap-1">
                     <i class="fa-solid fa-terminal"></i>
                     <span>Engineer Login</span>
                 </button>
+                <?php endif; ?>
             </div>
 
         </div>

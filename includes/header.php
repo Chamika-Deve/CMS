@@ -127,7 +127,7 @@ $currency_code = 'LKR';
 if (isset($pdo) && $pdo) {
     try {
         // Settings
-        $stmt_h = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('system_name', 'shop_logo', 'currency_symbol', 'shop_currency', 'supported_currencies_json')");
+        $stmt_h = $pdo->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('system_name', 'shop_logo', 'currency_symbol', 'shop_currency', 'supported_currencies_json', 'feature_multibranch', 'feature_custom_pc', 'feature_serials', 'feature_rma', 'feature_accounting', 'feature_tracker')");
         $all_settings = [];
         while ($row = $stmt_h->fetch()) {
             $all_settings[$row['setting_key']] = $row['setting_value'];
@@ -206,6 +206,16 @@ if (!function_exists('format_currency')) {
     }
 }
 
+// Feature flags default to enabled when the setting has never been saved,
+// so existing installations keep their current navigation.
+if (!function_exists('feature_enabled')) {
+    function feature_enabled(string $flag): bool {
+        global $all_settings;
+        $value = $all_settings[$flag] ?? null;
+        return $value === null || in_array(strtolower((string)$value), ['1', 'true', 'on'], true);
+    }
+}
+
 // User Initials
 $user_name = $user['name'] ?? 'Staff User';
 $user_email = $user['email'] ?? '';
@@ -280,6 +290,21 @@ if (empty($initials)) $initials = 'U';
         window.APP_CURRENCY = <?php echo json_encode($currency_symbol, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         window.CURRENCY_SYMBOL = window.APP_CURRENCY;
         window.CSMS_CSRF_TOKEN = <?php echo json_encode(csrf_token()); ?>;
+
+        // Shared escaping helpers for all dynamically rendered data (innerHTML & attributes).
+        window.escHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+        // For string arguments embedded in inline event handlers like onclick="fn('...')":
+        // JS-escape first, then HTML-attribute-escape so the browser's entity
+        // decoding cannot break out of the JavaScript string literal.
+        window.escJsArg = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/\\/g, () => '\\\\')
+            .replace(/'/g, () => "\\'");
 
         // Attach CSRF protection to all same-origin POST forms and fetch calls.
         (() => {
@@ -538,10 +563,12 @@ if (empty($initials)) $initials = 'U';
                         <i class="fa-solid fa-cash-register w-5 text-center text-[15px] <?php echo getIconColor('pos.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_pos'); ?></span>
                     </a>
+                    <?php if (feature_enabled('feature_custom_pc')): ?>
                     <a href="build_pc.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('build_pc.php'); ?>">
                         <i class="fa-solid fa-desktop w-5 text-center text-[15px] <?php echo getIconColor('build_pc.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_pc_builder'); ?></span>
                     </a>
+                    <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if (in_array($role, ['Admin', 'Manager', 'Technician', 'Cashier'])): ?>
@@ -585,7 +612,7 @@ if (empty($initials)) $initials = 'U';
                     </a>
                     <?php endif; ?>
 
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory', 'Cashier'])): ?>
+                    <?php if (in_array($role, ['Admin', 'Manager', 'Technician', 'Inventory', 'Cashier']) && feature_enabled('feature_rma')): ?>
                     <a href="warranty.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('warranty.php'); ?>">
                         <i class="fa-solid fa-shield-halved w-5 text-center text-[15px] <?php echo getIconColor('warranty.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_warranty'); ?></span>
@@ -598,7 +625,7 @@ if (empty($initials)) $initials = 'U';
             <div>
                 <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-3 mb-2"><?php echo __('nav_finance_control'); ?></p>
                 <div class="space-y-1">
-                    <?php if (in_array($role, ['Admin', 'Manager', 'Accountant', 'Cashier'])): ?>
+                    <?php if (in_array($role, ['Admin', 'Manager', 'Accountant', 'Cashier']) && feature_enabled('feature_accounting')): ?>
                     <a href="accounting.php" class="sidebar-item flex items-center px-3.5 py-3 rounded-2xl group <?php echo isActive('accounting.php'); ?>">
                         <i class="fa-solid fa-coins w-5 text-center text-[15px] <?php echo getIconColor('accounting.php'); ?>"></i>
                         <span class="ml-3 text-[14px]"><?php echo __('nav_accounting'); ?></span>

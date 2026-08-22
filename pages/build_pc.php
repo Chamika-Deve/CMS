@@ -220,11 +220,11 @@ require_once '../includes/header.php';
                     div.onclick = () => selectPart(p);
                     div.innerHTML = `
                         <div class="flex-1 min-w-0 pr-4">
-                            <div class="font-bold text-slate-800 text-sm truncate">${p.name}</div>
-                            <div class="text-xs text-slate-500 font-mono mt-0.5">${p.product_code}</div>
+                            <div class="font-bold text-slate-800 text-sm truncate">${escHtml(p.name)}</div>
+                            <div class="text-xs text-slate-500 font-mono mt-0.5">${escHtml(p.product_code)}</div>
                         </div>
                         <div class="font-bold text-emerald-600 text-sm">
-                            $${price}
+                            ${escHtml(window.CURRENCY_SYMBOL || "Rs.")}${price}
                         </div>
                     `;
                     resultsDiv.appendChild(div);

@@ -40,6 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new RuntimeException('You cannot assign that role.');
             }
 
+            $emailCheck = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+            $emailCheck->execute([$email]);
+            if ($emailCheck->fetchColumn()) {
+                throw new InvalidArgumentException('That email address is already used by another account.');
+            }
+
             $hash = password_hash($password, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO users (name, email, password, role, phone, branch_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$name, $email, $hash, $role_input, $phone, $branch, $status]);
@@ -52,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'edit_user' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             $name = trim($_POST['name'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $role_input = $_POST['role'] ?? 'Cashier';
@@ -68,6 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 throw new InvalidArgumentException('A name and valid email address are required.');
+            }
+
+            $emailCheck = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1');
+            $emailCheck->execute([$email, $id]);
+            if ($emailCheck->fetchColumn()) {
+                throw new InvalidArgumentException('That email address is already used by another account.');
             }
 
             if (!empty($_POST['password'])) {
@@ -90,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'delete_user' && $pdo) {
         try {
-            $id = (int)$_POST['id'];
+            $id = (int)($_POST['id'] ?? 0);
             // Check target user role
             $chk = $pdo->prepare("SELECT role FROM users WHERE id = ?");
             $chk->execute([$id]);

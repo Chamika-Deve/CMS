@@ -18,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $cost_price = (float)($_POST['cost_price'] ?? 0);
         $selling_price = (float)($_POST['selling_price'] ?? 0);
         $wholesale_price = (float)($_POST['wholesale_price'] ?? 0);
+        $min_price = (float)($_POST['min_price'] ?? 0);
+        $max_price = (float)($_POST['max_price'] ?? 0);
         $tax_rate = (float)($_POST['tax_rate'] ?? 0);
         $reorder_level = (int)($_POST['reorder_level'] ?? 5);
         $location = trim($_POST['location'] ?? 'Main Shelf');
@@ -28,8 +30,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         if ($name === '' || !$cat_id) {
             throw new InvalidArgumentException('Product name and category are required.');
         }
-        if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0) {
+        if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0 || $min_price < 0 || $max_price < 0) {
             throw new InvalidArgumentException('Product prices cannot be negative.');
+        }
+        if ($min_price > 0 && $max_price > 0 && $min_price > $max_price) {
+            throw new InvalidArgumentException('The minimum sale price cannot exceed the maximum sale price.');
         }
         if ($tax_rate < 0 || $tax_rate > 100 || $reorder_level < 0) {
             throw new InvalidArgumentException('Tax must be 0–100 and reorder level cannot be negative.');
@@ -46,14 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             INSERT INTO products (
                 name, category_id, sub_category, brand_id, model_number, 
                 product_code, ean, unit_of_measure, cost_price, selling_price, 
-                wholesale_price, tax_rate, reorder_level, location, status, 
+                wholesale_price, min_price, max_price, tax_rate, reorder_level, location, status, 
                 specifications, description, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
         ");
         $stmt->execute([
             $name, $cat_id, $sub_cat, $brand_id, $model_no, 
             $code, $barcode, $uom, $cost_price, $selling_price, 
-            $wholesale_price, $tax_rate, $reorder_level, $location, $status, 
+            $wholesale_price, $min_price, $max_price, $tax_rate, $reorder_level, $location, $status, 
             $specs, $desc
         ]);
         $success = true;
@@ -188,6 +193,18 @@ if ($pdo) {
                         <div>
                             <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Tax Rate (%)</label>
                             <input type="number" step="0.01" name="tax_rate" value="0.00" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-bold text-slate-800">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Min Sale Price (0 = off)</label>
+                            <input type="number" step="0.01" name="min_price" value="0.00" min="0" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-bold text-slate-800">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Max Sale Price (0 = off)</label>
+                            <input type="number" step="0.01" name="max_price" value="0.00" min="0" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-bold text-slate-800">
                         </div>
                     </div>
 

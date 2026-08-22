@@ -673,14 +673,14 @@ if ($pdo) {
             if (inCart) {
                 html += `
                 <li class="px-4 py-3 bg-slate-50 flex justify-between items-center opacity-50 cursor-not-allowed">
-                    <span class="font-mono text-slate-500">${s.serial_number}</span>
+                    <span class="font-mono text-slate-500">${escHtml(s.serial_number)}</span>
                     <span class="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded font-bold">In Cart</span>
                 </li>`;
             } else {
                 html += `
                 <li class="px-4 py-3 hover:bg-blue-50 transition-colors flex justify-between items-center cursor-pointer group"
-                    onclick="selectSerial(${s.id}, '${s.serial_number}')">
-                    <span class="font-mono font-medium text-slate-700 group-hover:text-blue-700">${s.serial_number}</span>
+                    onclick="selectSerial(${s.id}, '${escJsArg(s.serial_number)}')">
+                    <span class="font-mono font-medium text-slate-700 group-hover:text-blue-700">${escHtml(s.serial_number)}</span>
                     <button class="bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white px-3 py-1 rounded text-xs font-bold transition-colors">
                         Select
                     </button>
@@ -846,20 +846,20 @@ if ($pdo) {
             
             let serialsHtml = item.serials.map(s => `
                 <div class="flex justify-between items-center text-xs bg-slate-100 px-2 py-1.5 rounded mt-1.5 border border-slate-200 group/serial">
-                    <span class="font-mono text-slate-600">S/N: ${s.serial_number}</span>
+                    <span class="font-mono text-slate-600">S/N: ${escHtml(s.serial_number)}</span>
                     <button class="text-slate-400 hover:text-red-500 p-0.5 transition-colors opacity-50 group-hover/serial:opacity-100" title="Remove" onclick="removeFromCart(${s.cart_id})">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
             `).join('');
 
-            let safeName = item.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+            const safeName = escJsArg(item.name);
 
             html += `
             <li class="p-4 hover:bg-slate-50 transition-colors">
                 <div class="flex justify-between items-start mb-1">
                     <div class="flex-1 flex items-center flex-wrap gap-1">
-                        <span class="font-bold text-slate-800 text-sm leading-tight">${item.name}</span>
+                        <span class="font-bold text-slate-800 text-sm leading-tight">${escHtml(item.name)}</span>
                         <span class="inline-flex items-center justify-center bg-blue-100 text-blue-700 text-[10px] font-black px-1.5 py-0.5 rounded">x${qty}</span>
                         <button type="button" 
                                 onclick="openSerialModal(${item.product_id}, '${safeName}', ${item.price}, ${item.minPrice}, ${item.maxPrice})" 

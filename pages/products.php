@@ -211,6 +211,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $selling_price = (float)($_POST['selling_price'] ?? 0);
             $wholesale_price = (float)($_POST['wholesale_price'] ?? 0);
             $tax_rate = (float)($_POST['tax_rate'] ?? 0);
+            $min_price = (float)($_POST['min_price'] ?? 0);
+            $max_price = (float)($_POST['max_price'] ?? 0);
             $reorder_level = (int)($_POST['reorder_level'] ?? 5);
             $location = trim($_POST['location'] ?? 'Main Shelf');
             $status = $_POST['status'] ?? 'Active';
@@ -220,8 +222,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($name === '' || !$cat_id) {
                 throw new InvalidArgumentException('Product name and category are required.');
             }
-            if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0) {
+            if ($cost_price < 0 || $selling_price < 0 || $wholesale_price < 0 || $min_price < 0 || $max_price < 0) {
                 throw new InvalidArgumentException('Product prices cannot be negative.');
+            }
+            if ($min_price > 0 && $max_price > 0 && $min_price > $max_price) {
+                throw new InvalidArgumentException('The minimum sale price cannot exceed the maximum sale price.');
             }
             if ($tax_rate < 0 || $tax_rate > 100 || $reorder_level < 0) {
                 throw new InvalidArgumentException('Tax must be 0–100 and reorder level cannot be negative.');
@@ -240,14 +245,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     UPDATE products SET 
                         name = ?, category_id = ?, sub_category = ?, brand_id = ?, model_number = ?, 
                         product_code = ?, ean = ?, unit_of_measure = ?, cost_price = ?, selling_price = ?, 
-                        wholesale_price = ?, tax_rate = ?, reorder_level = ?, location = ?, status = ?, 
+                        wholesale_price = ?, min_price = ?, max_price = ?, tax_rate = ?, reorder_level = ?, location = ?, status = ?, 
                         specifications = ?, description = ?, updated_at = NOW()
                     WHERE id = ?
                 ");
                 $stmt->execute([
                     $name, $cat_id, $sub_cat, $brand_id, $model_no, 
                     $code, $barcode, $uom, $cost_price, $selling_price, 
-                    $wholesale_price, $tax_rate, $reorder_level, $location, $status, 
+                    $wholesale_price, $min_price, $max_price, $tax_rate, $reorder_level, $location, $status, 
                     $specs, $desc, $pid
                 ]);
                 $msg = "Product '$name' ($code) updated successfully!";
@@ -257,14 +262,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     INSERT INTO products (
                         name, category_id, sub_category, brand_id, model_number, 
                         product_code, ean, unit_of_measure, cost_price, selling_price, 
-                        wholesale_price, tax_rate, reorder_level, location, status, 
+                        wholesale_price, min_price, max_price, tax_rate, reorder_level, location, status, 
                         specifications, description, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                 ");
                 $stmt->execute([
                     $name, $cat_id, $sub_cat, $brand_id, $model_no, 
                     $code, $barcode, $uom, $cost_price, $selling_price, 
-                    $wholesale_price, $tax_rate, $reorder_level, $location, $status, 
+                    $wholesale_price, $min_price, $max_price, $tax_rate, $reorder_level, $location, $status, 
                     $specs, $desc
                 ]);
                 $new_pid = $pdo->lastInsertId();
@@ -291,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // 2. Stock Adjustment (Damage, Loss, Theft, Count Correction, Found Stock)
     if ($action === 'stock_adjustment' && $pdo) {
         try {
-            $product_id = (int)$_POST['product_id'];
+            $product_id = (int)($_POST['product_id'] ?? 0);
             $adj_type = $_POST['adjustment_type'] ?? 'add'; // 'add' or 'subtract'
             $qty = max(1, (int)($_POST['quantity'] ?? 1));
             $reason = trim($_POST['reason'] ?? 'Count Correction');
@@ -368,7 +373,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     // 4. Delete Product (or Discontinue)
     if ($action === 'delete_product' && $pdo) {
-        $del_id = (int)$_POST['product_id'];
+        $del_id = (int)($_POST['product_id'] ?? 0);
         try {
             // Check if product has sales or stock history
             $chk = $pdo->prepare("SELECT COUNT(*) FROM product_serials WHERE product_id = ?");
@@ -1184,6 +1189,14 @@ if ($pdo) {
                         <label class="block text-[11px] font-bold text-slate-600 mb-1">Tax Rate (%)</label>
                         <input type="number" step="0.01" name="tax_rate" id="prodFormTax" value="0.00" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
                     </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Min Sale Price (0 = off)</label>
+                        <input type="number" step="0.01" name="min_price" id="prodFormMin" value="0.00" min="0" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Max Sale Price (0 = off)</label>
+                        <input type="number" step="0.01" name="max_price" id="prodFormMax" value="0.00" min="0" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1455,6 +1468,8 @@ function openProductModal() {
     document.getElementById('prodFormSell').value = '0.00';
     document.getElementById('prodFormWholesale').value = '0.00';
     document.getElementById('prodFormTax').value = '0.00';
+    document.getElementById('prodFormMin').value = '0.00';
+    document.getElementById('prodFormMax').value = '0.00';
     document.getElementById('prodFormReorder').value = '5';
     document.getElementById('prodFormLocation').value = 'Aisle 1, Shelf A';
     document.getElementById('prodFormUom').value = 'pcs';
@@ -1479,6 +1494,8 @@ function editProduct(pr) {
     document.getElementById('prodFormSell').value = parseFloat(pr.selling_price || 0).toFixed(2);
     document.getElementById('prodFormWholesale').value = parseFloat(pr.wholesale_price || 0).toFixed(2);
     document.getElementById('prodFormTax').value = parseFloat(pr.tax_rate || 0).toFixed(2);
+    document.getElementById('prodFormMin').value = parseFloat(pr.min_price || 0).toFixed(2);
+    document.getElementById('prodFormMax').value = parseFloat(pr.max_price || 0).toFixed(2);
     document.getElementById('prodFormReorder').value = pr.reorder_level || 5;
     document.getElementById('prodFormLocation').value = pr.location || 'Main Shelf';
     document.getElementById('prodFormUom').value = pr.unit_of_measure || 'pcs';
@@ -1522,7 +1539,7 @@ function loadCategories() {
             d.categories.forEach(cat => {
                 html += `
                     <div class="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-200/70">
-                        <span class="font-bold text-slate-800">${cat.name} (${cat.product_count} products)</span>
+                        <span class="font-bold text-slate-800">${escHtml(cat.name)} (${cat.product_count} products)</span>
                         <button type="button" onclick="deleteCategory(${cat.id})" class="text-slate-400 hover:text-red-600 transition-colors"><i class="fa-solid fa-trash text-xs"></i></button>
                     </div>
                 `;
@@ -1621,7 +1638,7 @@ function viewProductSerials(pid, pname) {
                 html += `
                     <div class="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between">
                         <div>
-                            <span class="font-mono font-bold text-slate-900 block">${sn.serial_number}</span>
+                            <span class="font-mono font-bold text-slate-900 block">${escHtml(sn.serial_number)}</span>
                             <span class="text-[10px] text-slate-400">${sn.created_at ? sn.created_at.substring(0, 10) : ''}</span>
                         </div>
                         <span class="px-2 py-0.5 rounded-lg text-[10px] font-bold ${badge}">${st}</span>
@@ -1727,7 +1744,7 @@ function addSerial(e) {
             document.getElementById('scanCount').textContent = scannedCount;
             const log = document.getElementById('scannedLog');
             if (scannedCount === 1) log.innerHTML = '';
-            log.innerHTML = `<div class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i> ${serial}</div>` + log.innerHTML;
+            log.innerHTML = `<div class="text-emerald-700 font-bold"><i class="fa-solid fa-check mr-1"></i> ${escHtml(serial)}</div>` + log.innerHTML;
             document.getElementById('serialInput').value = '';
         } else {
             alert(d.message);
