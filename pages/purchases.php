@@ -82,7 +82,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     }
 }
 
-// POST Handlers for Purchase Orders, GRNs, Returns & AP Payments
+// ── Supplier Payment AJAX Handlers ──────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
+    header('Content-Type: application/json');
+    $action = $_POST['action'] ?? '';
+
+    // Get payment history for a supplier or a specific PO
+    if ($action === 'get_supplier_payments' && $pdo) {
+        $supplier_id = (int)($_POST['supplier_id'] ?? 0);
+        $po_id       = (int)($_POST['po_id'] ?? 0);
+        try {
+            // Supplier summary
+            $s = $pdo->prepare("SELECT name, balance_due FROM suppliers WHERE id = ?");
+            $s->execute([$supplier_id]);
+            $supplier = $s->fetch(PDO::FETCH_ASSOC);
+
+            // PO-level summary if po_id given
+            $po_info = null;
+            if ($po_id > 0) {
+                $ps = $pdo->prepare("SELECT invoice_no, total_amount, amount_paid, payment_status FROM purchases WHERE id = ?");
+                $ps->execute([$po_id]);
+                $po_info = $ps->fetch(PDO::FETCH_ASSOC);
+            }
+
+            // Payment history
+            $ph = $pdo->prepare("
+                SELECT sp.*, p.invoice_no as po_number
+                FROM supplier_payments sp
+                LEFT JOIN purchases p ON sp.purchase_id = p.id
+                WHERE sp.supplier_id = ?
+                " . ($po_id > 0 ? "AND sp.purchase_id = ?" : "") . "
+                ORDER BY sp.payment_date DESC, sp.id DESC
+                LIMIT 50
+            ");
+            $params = $po_id > 0 ? [$supplier_id, $po_id] : [$supplier_id];
+            $ph->execute($params);
+            $payments = $ph->fetchAll(PDO::FETCH_ASSOC);
+
+            // Per-PO outstanding for this supplier
+            $po_list = $pdo->prepare("
+                SELECT id, invoice_no, purchase_date, total_amount, amount_paid,
+                       (total_amount - amount_paid) as balance_remaining, payment_status, status
+                FROM purchases
+                WHERE supplier_id = ? AND payment_status != 'Paid'
+                ORDER BY purchase_date DESC
+                LIMIT 20
+            ");
+            $po_list->execute([$supplier_id]);
+            $outstanding_pos = $po_list->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'success'         => true,
+                'supplier'        => $supplier,
+                'po_info'         => $po_info,
+                'payments'        => $payments,
+                'outstanding_pos' => $outstanding_pos,
+            ]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => safe_error_message($e)]);
+        }
+        exit;
+    }
+
+    exit; // fallthrough guard for payment AJAX block
+}
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
 
@@ -432,6 +497,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
+    // 7. Record Supplier Payment ──────────────────────────────────────────────
+    if ($action === 'record_payment' && $pdo) {
+        try {
+            $supplier_id    = (int)($_POST['supplier_id'] ?? 0);
+            $po_id          = (int)($_POST['po_id'] ?? 0); // optional — 0 = general payment
+            $pay_date       = !empty($_POST['payment_date']) ? $_POST['payment_date'] : date('Y-m-d');
+            $amount         = round((float)($_POST['amount'] ?? 0), 2);
+            $method         = $_POST['payment_method'] ?? 'Cash';
+            $ref_no         = trim($_POST['reference_no'] ?? '');
+            $notes          = trim($_POST['notes'] ?? '');
+            $valid_methods  = ['Cash','Bank Transfer','Cheque','Online','Credit Card','Other'];
+
+            if ($supplier_id < 1)           throw new InvalidArgumentException('Please select a valid supplier.');
+            if ($amount <= 0)               throw new InvalidArgumentException('Payment amount must be greater than zero.');
+            if (!in_array($method, $valid_methods, true)) throw new InvalidArgumentException('Invalid payment method.');
+
+            $date_parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $pay_date);
+            if (!$date_parsed) throw new InvalidArgumentException('Invalid payment date.');
+
+            $pdo->beginTransaction();
+
+            // Validate supplier exists and lock row
+            $supp_row = $pdo->prepare('SELECT id, name, balance_due FROM suppliers WHERE id = ? FOR UPDATE');
+            $supp_row->execute([$supplier_id]);
+            $supp = $supp_row->fetch(PDO::FETCH_ASSOC);
+            if (!$supp) throw new RuntimeException('Supplier not found.');
+
+            // Validate PO if linked
+            $po_row = null;
+            if ($po_id > 0) {
+                $po_stmt = $pdo->prepare('SELECT id, invoice_no, total_amount, amount_paid, payment_status FROM purchases WHERE id = ? AND supplier_id = ? FOR UPDATE');
+                $po_stmt->execute([$po_id, $supplier_id]);
+                $po_row = $po_stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$po_row) throw new RuntimeException('This PO does not belong to the selected supplier.');
+                $po_balance = round((float)$po_row['total_amount'] - (float)$po_row['amount_paid'], 2);
+                if ($amount > $po_balance + 0.01) {
+                    throw new InvalidArgumentException("Payment amount ($amount) exceeds PO balance due (" . number_format($po_balance, 2) . "). Reduce the amount or choose 'General Payment (All POs)'.");
+                }
+            }
+
+            // Insert payment record
+            $ins = $pdo->prepare('
+                INSERT INTO supplier_payments (supplier_id, purchase_id, payment_date, amount, payment_method, reference_no, notes, recorded_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ');
+            $ins->execute([
+                $supplier_id,
+                $po_id > 0 ? $po_id : null,
+                $pay_date,
+                $amount,
+                $method,
+                $ref_no ?: null,
+                $notes ?: null,
+                $user['id'] ?? null
+            ]);
+
+            // Reduce supplier balance_due
+            $upd_supp = $pdo->prepare('UPDATE suppliers SET balance_due = GREATEST(0, balance_due - ?) WHERE id = ?');
+            $upd_supp->execute([$amount, $supplier_id]);
+
+            // Update PO amount_paid & payment_status if linked
+            if ($po_id > 0 && $po_row) {
+                $new_paid   = round((float)$po_row['amount_paid'] + $amount, 2);
+                $new_status = ($new_paid >= (float)$po_row['total_amount'] - 0.01) ? 'Paid' : 'Partial';
+                $upd_po = $pdo->prepare('UPDATE purchases SET amount_paid = ?, payment_status = ? WHERE id = ?');
+                $upd_po->execute([$new_paid, $new_status, $po_id]);
+            }
+
+            // Activity log
+            try {
+                $log = $pdo->prepare("INSERT INTO activity_logs (user_id, action, module, table_name, record_id, details) VALUES (?, 'Record Payment', 'Purchasing', 'supplier_payments', ?, ?)");
+                $log->execute([$user['id'] ?? null, $pdo->lastInsertId(), "Paid " . number_format($amount, 2) . " to {$supp['name']}" . ($po_id > 0 ? " for PO #{$po_row['invoice_no']}" : " (General)") . " via $method"]);
+            } catch (Exception $le) {}
+
+            $pdo->commit();
+            $msg = "Payment of " . htmlspecialchars($currency_symbol) . " " . number_format($amount, 2) . " recorded for {$supp['name']}" . ($po_id > 0 ? " (PO: {$po_row['invoice_no']})" : " (General Payment)") . " via $method.";
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $msg = 'Error recording payment: ' . safe_error_message($e);
+            $msg_type = 'error';
+        }
+    }
+
 }
 
 require_once '../includes/header.php';
@@ -445,9 +593,11 @@ $suppliers = [];
 $products = [];
 $purchase_orders = [];
 $purchase_returns = [];
+$supplier_payments_list = [];
 $total_po_count = 0;
 $pending_po_count = 0;
 $total_ap_due = 0.0;
+$total_paid_this_month = 0.0;
 
 if ($pdo) {
     try {
@@ -500,6 +650,25 @@ if ($pdo) {
         ");
         $purchase_returns = $stmt_ret_list->fetchAll(PDO::FETCH_ASSOC);
 
+        // Fetch recent supplier payments (for Payments tab)
+        $stmt_payments_list = $pdo->query("
+            SELECT sp.*,
+                   s.name as supplier_name,
+                   p.invoice_no as po_number
+            FROM supplier_payments sp
+            LEFT JOIN suppliers s ON sp.supplier_id = s.id
+            LEFT JOIN purchases p ON sp.purchase_id = p.id
+            ORDER BY sp.payment_date DESC, sp.id DESC
+            LIMIT 100
+        ");
+        $supplier_payments_list = $stmt_payments_list->fetchAll(PDO::FETCH_ASSOC);
+
+        // Total payments made (this month)
+        $total_paid_this_month = (float)$pdo->query("
+            SELECT COALESCE(SUM(amount), 0) FROM supplier_payments
+            WHERE MONTH(payment_date) = MONTH(CURDATE()) AND YEAR(payment_date) = YEAR(CURDATE())
+        ")->fetchColumn();
+
     } catch (Exception $e) {}
 }
 
@@ -548,12 +717,16 @@ if ($pdo) {
         <a href="purchases.php?tab=scan" class="px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap <?php echo $tab === 'scan' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20' : 'text-slate-600 hover:bg-slate-100'; ?>">
             <i class="fa-solid fa-barcode mr-1.5"></i> Rapid Barcode Inbound
         </a>
+        <a href="purchases.php?tab=payments" class="px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap <?php echo $tab === 'payments' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20' : 'text-slate-600 hover:bg-slate-100'; ?>">
+            <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Supplier Payments
+            <?php if ($total_ap_due > 0): ?><span class="ml-1 px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-extrabold"><?php echo number_format($total_ap_due, 0); ?> Due</span><?php endif; ?>
+        </a>
     </div>
 
     <!-- KPI Summary Row -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-white rounded-3xl p-6 shadow-card border border-slate-100/90 flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="bg-white rounded-3xl p-5 shadow-card border border-slate-100/90 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold shrink-0">
                 <i class="fa-solid fa-file-invoice"></i>
             </div>
             <div>
@@ -562,8 +735,8 @@ if ($pdo) {
             </div>
         </div>
 
-        <div class="bg-white rounded-3xl p-6 shadow-card border border-slate-100/90 flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold">
+        <div class="bg-white rounded-3xl p-5 shadow-card border border-slate-100/90 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold shrink-0">
                 <i class="fa-solid fa-truck-ramp-box"></i>
             </div>
             <div>
@@ -572,13 +745,23 @@ if ($pdo) {
             </div>
         </div>
 
-        <div class="bg-white rounded-3xl p-6 shadow-card border border-slate-100/90 flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl font-bold">
+        <div class="bg-white rounded-3xl p-5 shadow-card border border-slate-100/90 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl font-bold shrink-0">
                 <i class="fa-solid fa-file-invoice-dollar"></i>
             </div>
             <div>
-                <h3 class="text-2xl font-extrabold text-red-600"><?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format($total_ap_due, 2); ?></h3>
-                <p class="text-xs text-slate-400 font-medium">Accounts Payable Due to Vendors</p>
+                <h3 class="text-xl font-extrabold text-red-600"><?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format($total_ap_due, 2); ?></h3>
+                <p class="text-xs text-slate-400 font-medium">Total Balance Due to Suppliers</p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-3xl p-5 shadow-card border border-slate-100/90 flex items-center gap-4 cursor-pointer hover:border-emerald-300 transition-all" onclick="window.location='purchases.php?tab=payments'">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold shrink-0">
+                <i class="fa-solid fa-money-bill-wave"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-extrabold text-emerald-700"><?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format($total_paid_this_month, 2); ?></h3>
+                <p class="text-xs text-slate-400 font-medium">Paid to Suppliers This Month</p>
             </div>
         </div>
     </div>
@@ -979,6 +1162,266 @@ if ($pdo) {
                         <span class="text-slate-400 italic">No serials scanned yet.</span>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($tab === 'payments'): ?>
+    <!-- Tab 5: Supplier Payments ──────────────────────────────────────── -->
+    <div class="space-y-6">
+
+        <!-- Record Payment Form -->
+        <div class="bg-white rounded-3xl shadow-card border border-slate-100/90 p-6 sm:p-7">
+            <div class="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
+                <div class="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg font-bold">
+                    <i class="fa-solid fa-money-bill-wave"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900">Record Supplier Payment</h2>
+                    <p class="text-xs text-slate-400">Log a payment made to a supplier — can be linked to a specific PO or recorded as a general payment</p>
+                </div>
+            </div>
+
+            <form method="POST" action="purchases.php?tab=payments" class="space-y-5" onsubmit="return validatePaymentForm()">
+                <input type="hidden" name="action" value="record_payment">
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Supplier -->
+                    <div class="sm:col-span-1">
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-truck-field text-emerald-500 mr-1"></i> Supplier *
+                        </label>
+                        <select name="supplier_id" id="paySupplier" required onchange="loadPOsForPayment(this.value)"
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                            <option value="">— Select Supplier —</option>
+                            <?php foreach ($suppliers as $s): ?>
+                                <option value="<?php echo $s['id']; ?>" data-balance="<?php echo $s['balance_due']; ?>">
+                                    <?php echo htmlspecialchars($s['name']); ?>
+                                    <?php if ((float)$s['balance_due'] > 0): ?>
+                                        — Due: <?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format((float)$s['balance_due'], 2); ?>
+                                    <?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <!-- Linked PO (optional) -->
+                    <div class="sm:col-span-1">
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-file-invoice text-blue-500 mr-1"></i> Link to PO (Optional)
+                        </label>
+                        <select name="po_id" id="payPOSelect"
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                            <option value="0">— General Payment (All POs) —</option>
+                        </select>
+                        <p class="text-[10px] text-slate-400 mt-1">If left as General, payment reduces total supplier balance</p>
+                    </div>
+
+                    <!-- Amount -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-coins text-amber-500 mr-1"></i> Amount (<?php echo htmlspecialchars($currency_symbol); ?>) *
+                        </label>
+                        <input type="number" name="amount" id="payAmount" step="0.01" min="0.01" required placeholder="0.00"
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                        <p id="payBalanceHint" class="text-[10px] text-slate-400 mt-1 hidden"></p>
+                    </div>
+
+                    <!-- Payment Date -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-calendar text-slate-400 mr-1"></i> Payment Date *
+                        </label>
+                        <input type="date" name="payment_date" required value="<?php echo date('Y-m-d'); ?>"
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                    </div>
+
+                    <!-- Payment Method -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-credit-card text-purple-500 mr-1"></i> Payment Method *
+                        </label>
+                        <select name="payment_method" required
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                            <option value="Cash">💵 Cash</option>
+                            <option value="Bank Transfer">🏦 Bank Transfer</option>
+                            <option value="Cheque">📄 Cheque</option>
+                            <option value="Online">🌐 Online / Mobile Payment</option>
+                            <option value="Credit Card">💳 Credit Card</option>
+                            <option value="Other">📎 Other</option>
+                        </select>
+                    </div>
+
+                    <!-- Reference No -->
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                            <i class="fa-solid fa-hashtag text-slate-400 mr-1"></i> Reference / Cheque No
+                        </label>
+                        <input type="text" name="reference_no" placeholder="Bank ref, cheque no, transaction ID..."
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500">
+                    </div>
+
+                    <!-- Notes (full width) -->
+                    <div class="sm:col-span-2 lg:col-span-3">
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Notes (Optional)</label>
+                        <textarea name="notes" rows="2" placeholder="Additional payment notes or remarks..."
+                            class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"></textarea>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                    <div id="paymentSummaryBox" class="hidden flex-1 p-3 bg-blue-50 border border-blue-100 rounded-2xl text-xs text-blue-800 font-semibold">
+                        <i class="fa-solid fa-circle-info mr-1 text-blue-500"></i>
+                        <span id="paymentSummaryText"></span>
+                    </div>
+                    <button type="submit" class="px-6 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm transition-all shadow-sm shadow-emerald-500/25 flex items-center gap-2">
+                        <i class="fa-solid fa-money-bill-wave"></i> Record Payment
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Per-Supplier Balance Overview -->
+        <div class="bg-white rounded-3xl shadow-card border border-slate-100/90 p-6 sm:p-7">
+            <h2 class="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-chart-bar text-emerald-600"></i> Supplier Balance Summary
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                            <th class="py-3 pr-4">Supplier</th>
+                            <th class="py-3 pr-4">Contact</th>
+                            <th class="py-3 pr-4 text-right">Total PO Value</th>
+                            <th class="py-3 pr-4 text-right">Balance Due</th>
+                            <th class="py-3 text-center">Status</th>
+                            <th class="py-3 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <?php
+                        $has_balance = false;
+                        foreach ($suppliers as $sv):
+                            $bal = (float)($sv['balance_due'] ?? 0);
+                            if ($bal <= 0) continue;
+                            $has_balance = true;
+                        ?>
+                        <tr class="hover:bg-slate-50/60 transition-colors">
+                            <td class="py-4 pr-4">
+                                <span class="font-bold text-slate-900 block"><?php echo htmlspecialchars($sv['name']); ?></span>
+                                <span class="text-[10px] text-slate-400"><?php echo htmlspecialchars($sv['payment_terms'] ?? 'N/A'); ?></span>
+                            </td>
+                            <td class="py-4 pr-4 text-slate-500"><?php echo htmlspecialchars($sv['phone'] ?? '—'); ?></td>
+                            <td class="py-4 pr-4 text-right font-semibold text-slate-700">
+                                <?php
+                                // Get total PO value for this supplier
+                                $sv_po_total = 0;
+                                if ($pdo) {
+                                    try {
+                                        $svt = $pdo->prepare("SELECT COALESCE(SUM(total_amount),0) FROM purchases WHERE supplier_id=?");
+                                        $svt->execute([$sv['id']]);
+                                        $sv_po_total = (float)$svt->fetchColumn();
+                                    } catch (Exception $e) {}
+                                }
+                                echo htmlspecialchars($currency_symbol) . ' ' . number_format($sv_po_total, 2);
+                                ?>
+                            </td>
+                            <td class="py-4 pr-4 text-right">
+                                <span class="font-extrabold <?php echo $bal > 0 ? 'text-red-600' : 'text-emerald-600'; ?>">
+                                    <?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format($bal, 2); ?>
+                                </span>
+                            </td>
+                            <td class="py-4 text-center">
+                                <?php if ($bal > 0): ?>
+                                    <span class="px-2.5 py-1 rounded-xl bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold">Unpaid</span>
+                                <?php else: ?>
+                                    <span class="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">Settled</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="py-4 text-right">
+                                <button onclick="prefillPayment(<?php echo $sv['id']; ?>, '<?php echo addslashes(htmlspecialchars($sv['name'])); ?>', <?php echo $bal; ?>)"
+                                    class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all">
+                                    <i class="fa-solid fa-money-bill-wave mr-1"></i> Pay Now
+                                </button>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php if (!$has_balance): ?>
+                        <tr>
+                            <td colspan="6" class="py-8 text-center text-slate-400">
+                                <i class="fa-solid fa-circle-check text-emerald-400 text-2xl mb-2 block"></i>
+                                All supplier balances are settled! No outstanding payments.
+                            </td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Payment History Table -->
+        <div class="bg-white rounded-3xl shadow-card border border-slate-100/90 p-6 sm:p-7">
+            <div class="flex items-center justify-between mb-5">
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-blue-600"></i> Payment History
+                </h2>
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                    <input type="text" id="paymentSearch" onkeyup="filterPayments()"
+                        placeholder="Search payments..."
+                        class="pl-8 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-48">
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs" id="paymentsTable">
+                    <thead>
+                        <tr class="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                            <th class="py-3 pr-4">Date</th>
+                            <th class="py-3 pr-4">Supplier</th>
+                            <th class="py-3 pr-4">Linked PO</th>
+                            <th class="py-3 pr-4">Method</th>
+                            <th class="py-3 pr-4">Reference</th>
+                            <th class="py-3 pr-4 text-right">Amount</th>
+                            <th class="py-3">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <?php if (!empty($supplier_payments_list)): ?>
+                            <?php foreach ($supplier_payments_list as $pay): ?>
+                            <tr class="hover:bg-slate-50/60 transition-colors">
+                                <td class="py-3.5 pr-4 font-semibold text-slate-700"><?php echo date('M j, Y', strtotime($pay['payment_date'])); ?></td>
+                                <td class="py-3.5 pr-4 font-bold text-slate-900"><?php echo htmlspecialchars($pay['supplier_name'] ?? '—'); ?></td>
+                                <td class="py-3.5 pr-4">
+                                    <?php if (!empty($pay['po_number'])): ?>
+                                        <span class="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 font-mono text-[10px] font-bold"><?php echo htmlspecialchars($pay['po_number']); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-slate-400 italic">General</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="py-3.5 pr-4">
+                                    <?php
+                                    $method_icons = ['Cash' => '💵', 'Bank Transfer' => '🏦', 'Cheque' => '📄', 'Online' => '🌐', 'Credit Card' => '💳', 'Other' => '📎'];
+                                    $icon = $method_icons[$pay['payment_method']] ?? '💰';
+                                    ?>
+                                    <span class="font-semibold text-slate-700"><?php echo $icon; ?> <?php echo htmlspecialchars($pay['payment_method']); ?></span>
+                                </td>
+                                <td class="py-3.5 pr-4 font-mono text-[11px] text-slate-500"><?php echo htmlspecialchars($pay['reference_no'] ?? '—'); ?></td>
+                                <td class="py-3.5 pr-4 text-right font-extrabold text-emerald-700"><?php echo htmlspecialchars($currency_symbol); ?> <?php echo number_format((float)$pay['amount'], 2); ?></td>
+                                <td class="py-3.5 text-slate-400 text-[11px] max-w-[180px] truncate"><?php echo htmlspecialchars($pay['notes'] ?? '—'); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="7" class="py-8 text-center text-slate-400">
+                                    <i class="fa-solid fa-money-bill-wave text-2xl mb-2 block text-slate-300"></i>
+                                    No payments recorded yet. Use the form above to record your first supplier payment.
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -1584,6 +2027,144 @@ function filterPOs() {
     const q = document.getElementById('poSearch').value.toLowerCase();
     const rows = document.querySelectorAll('#poTable tbody tr');
     rows.forEach(r => {
+        r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+// ── Supplier Payments JS ────────────────────────────────────────────────────
+
+const supplierPOData = {}; // cache: supplierId → [{id, invoice_no, balance_remaining, total_amount}]
+
+function loadPOsForPayment(supplierId) {
+    const poSel  = document.getElementById('payPOSelect');
+    const hint   = document.getElementById('payBalanceHint');
+    const sumBox = document.getElementById('paymentSummaryBox');
+    const sumTxt = document.getElementById('paymentSummaryText');
+
+    poSel.innerHTML = '<option value="0">— General Payment (All POs) —</option>';
+    if (!supplierId) return;
+
+    // Show balance hint from the option data-balance
+    const opt = document.querySelector('#paySupplier option[value="' + supplierId + '"]');
+    const bal = opt ? parseFloat(opt.dataset.balance || 0) : 0;
+    if (bal > 0 && hint) {
+        hint.textContent = 'Total outstanding balance: ' + (window.CURRENCY_SYMBOL || 'Rs.') + ' ' + bal.toFixed(2);
+        hint.classList.remove('hidden');
+    } else if (hint) {
+        hint.classList.add('hidden');
+    }
+
+    // Fetch outstanding POs via AJAX
+    const fd = new FormData();
+    fd.append('ajax', '1');
+    fd.append('action', 'get_supplier_payments');
+    fd.append('supplier_id', supplierId);
+
+    fetch('purchases.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+            const outstandingPOs = d.outstanding_pos || [];
+            if (outstandingPOs.length > 0) {
+                outstandingPOs.forEach(po => {
+                    const bal = parseFloat(po.balance_remaining || 0);
+                    if (bal <= 0) return;
+                    const opt = document.createElement('option');
+                    opt.value = po.id;
+                    opt.dataset.balance = bal.toFixed(2);
+                    opt.textContent = po.invoice_no + ' — Due: ' + (window.CURRENCY_SYMBOL || 'Rs.') + ' ' + bal.toFixed(2);
+                    poSel.appendChild(opt);
+                });
+
+                // Show summary
+                if (sumBox && sumTxt) {
+                    sumTxt.textContent = outstandingPOs.length + ' outstanding PO(s). You can pay against a specific PO or record a general payment.';
+                    sumBox.classList.remove('hidden');
+                }
+            } else {
+                if (sumBox && sumTxt) {
+                    sumTxt.textContent = 'All POs for this supplier are fully paid.';
+                    sumBox.classList.remove('hidden');
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+// Update amount hint when PO is selected
+document.addEventListener('DOMContentLoaded', function() {
+    const poSel = document.getElementById('payPOSelect');
+    const amtIn = document.getElementById('payAmount');
+    const hint  = document.getElementById('payBalanceHint');
+
+    if (poSel) {
+        poSel.addEventListener('change', function() {
+            const selOpt = poSel.options[poSel.selectedIndex];
+            const bal = parseFloat(selOpt?.dataset?.balance || 0);
+            if (bal > 0 && hint) {
+                hint.textContent = 'PO balance remaining: ' + (window.CURRENCY_SYMBOL || 'Rs.') + ' ' + bal.toFixed(2);
+                hint.classList.remove('hidden');
+                if (amtIn && !amtIn.value) amtIn.value = bal.toFixed(2);
+            } else if (hint && poSel.value === '0') {
+                // General payment — show supplier total balance
+                const suppOpt = document.querySelector('#paySupplier option:checked');
+                const suppBal = parseFloat(suppOpt?.dataset?.balance || 0);
+                if (suppBal > 0) {
+                    hint.textContent = 'Total supplier balance: ' + (window.CURRENCY_SYMBOL || 'Rs.') + ' ' + suppBal.toFixed(2);
+                    hint.classList.remove('hidden');
+                    if (amtIn && !amtIn.value) amtIn.value = suppBal.toFixed(2);
+                }
+            }
+        });
+    }
+});
+
+function prefillPayment(supplierId, supplierName, balanceDue) {
+    // Scroll to top & switch to payments tab if not there
+    const suppSel = document.getElementById('paySupplier');
+    if (!suppSel) {
+        window.location.href = 'purchases.php?tab=payments';
+        return;
+    }
+    suppSel.value = supplierId;
+    loadPOsForPayment(supplierId);
+
+    const amtIn = document.getElementById('payAmount');
+    if (amtIn) amtIn.value = parseFloat(balanceDue).toFixed(2);
+
+    suppSel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function validatePaymentForm() {
+    const supp  = document.getElementById('paySupplier');
+    const amt   = document.getElementById('payAmount');
+    const poSel = document.getElementById('payPOSelect');
+
+    if (!supp || !supp.value) {
+        alert('Please select a supplier.');
+        supp && supp.focus();
+        return false;
+    }
+    const amount = parseFloat(amt?.value || 0);
+    if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid payment amount greater than zero.');
+        amt && amt.focus();
+        return false;
+    }
+    // Warn if PO is selected and amount > balance
+    if (poSel && poSel.value !== '0') {
+        const selOpt = poSel.options[poSel.selectedIndex];
+        const bal = parseFloat(selOpt?.dataset?.balance || Infinity);
+        if (amount > bal + 0.01) {
+            return confirm('Warning: Payment amount (' + amount.toFixed(2) + ') exceeds the PO balance (' + bal.toFixed(2) + '). Are you sure you want to proceed?');
+        }
+    }
+    return true;
+}
+
+function filterPayments() {
+    const q = document.getElementById('paymentSearch')?.value.toLowerCase() || '';
+    document.querySelectorAll('#paymentsTable tbody tr').forEach(r => {
         r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
 }
